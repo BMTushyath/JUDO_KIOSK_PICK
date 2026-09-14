@@ -11,107 +11,96 @@ const DEFAULT_CATEGORY = {
   weightCategory: "-73 KG"
 };
 
+const readLS = (key, fallback) => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeLS = (key, val) => {
+  try {
+    if (val === undefined || val === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, JSON.stringify(val));
+    }
+  } catch {}
+};
+
 export function TournamentProvider({ children }) {
   const isDisplay = typeof window !== 'undefined' && window.location.pathname.startsWith('/display');
 
-  // 1. Dataset metadata & Participants list (initialized with localStorage cache for instant offline load)
-  const [datasetMeta, setDatasetMeta] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_DATASET_META`);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const [participants, setParticipants] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_PARTICIPANTS`);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // 2. Operator display category (Independent of participant data)
-  const [operatorCategory, setOperatorCategoryState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_OPERATOR_CATEGORY`);
-      return saved ? JSON.parse(saved) : DEFAULT_CATEGORY;
-    } catch {
-      return DEFAULT_CATEGORY;
-    }
-  });
-
-  // 3. Matchup Queue (Ordered list of fixtures without match numbers)
-  const [fixtures, setFixtures] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_FIXTURES`);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // 4. Current active fixture ID
-  const [currentFixtureId, setCurrentFixtureId] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_CURRENT_ID`);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  // 5. Audit logs
-  const [auditLogs, setAuditLogs] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_LOGS`);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // State definitions initialized from localStorage cache for instant UI rendering
+  const [datasetMeta, setDatasetMeta] = useState(() => readLS(`${STORAGE_KEY}_DATASET_META`, null));
+  const [participants, setParticipants] = useState(() => readLS(`${STORAGE_KEY}_PARTICIPANTS`, []));
+  const [operatorCategory, setOperatorCategoryState] = useState(() => readLS(`${STORAGE_KEY}_OPERATOR_CATEGORY`, DEFAULT_CATEGORY));
+  const [fixtures, setFixtures] = useState(() => readLS(`${STORAGE_KEY}_FIXTURES`, []));
+  const [currentFixtureId, setCurrentFixtureId] = useState(() => readLS(`${STORAGE_KEY}_CURRENT_ID`, null));
+  const [auditLogs, setAuditLogs] = useState(() => readLS(`${STORAGE_KEY}_LOGS`, []));
 
   const [lastSync, setLastSync] = useState(() => new Date().toLocaleTimeString());
   const [realtimeStatus, setRealtimeStatus] = useState("CONNECTED");
   const [dbStatus, setDbStatus] = useState("ONLINE");
   const [displayConnected, setDisplayConnected] = useState(true);
 
-  // References for WebRTC and synchronization
+  // References for WebRTC and synchronization to prevent re-renders & connection churn
   const localVersionRef = useRef(0);
   const operatorPeerIdRef = useRef(null);
   const connectedPeerIdRef = useRef(null);
   const activeConnectionsRef = useRef([]);
   const peerRef = useRef(null);
 
+  // Always-fresh snapshot of state for asynchronous handlers without effect re-triggering
+  const stateRef = useRef({
+    datasetMeta,
+    participants,
+    operatorCategory,
+    fixtures,
+    currentFixtureId,
+    auditLogs
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      datasetMeta,
+      participants,
+      operatorCategory,
+      fixtures,
+      currentFixtureId,
+      auditLogs
+    };
+  });
+
   // Apply state updates from remote source (API or WebRTC or BroadcastChannel)
   const applyRemoteState = useCallback((payload) => {
-    if (!payload) return;
+    if (!payload || typeof payload !== 'object') return;
     try {
       if (payload.datasetMeta !== undefined) {
         setDatasetMeta(payload.datasetMeta);
-        localStorage.setItem(`${STORAGE_KEY}_DATASET_META`, JSON.stringify(payload.datasetMeta));
+        writeLS(`${STORAGE_KEY}_DATASET_META`, payload.datasetMeta);
       }
       if (payload.participants !== undefined) {
         setParticipants(payload.participants);
-        localStorage.setItem(`${STORAGE_KEY}_PARTICIPANTS`, JSON.stringify(payload.participants));
+        writeLS(`${STORAGE_KEY}_PARTICIPANTS`, payload.participants);
       }
       if (payload.operatorCategory !== undefined) {
         setOperatorCategoryState(payload.operatorCategory);
-        localStorage.setItem(`${STORAGE_KEY}_OPERATOR_CATEGORY`, JSON.stringify(payload.operatorCategory));
+        writeLS(`${STORAGE_KEY}_OPERATOR_CATEGORY`, payload.operatorCategory);
       }
       if (payload.fixtures !== undefined) {
         setFixtures(payload.fixtures);
-        localStorage.setItem(`${STORAGE_KEY}_FIXTURES`, JSON.stringify(payload.fixtures));
+        writeLS(`${STORAGE_KEY}_FIXTURES`, payload.fixtures);
       }
       if (payload.currentFixtureId !== undefined) {
         setCurrentFixtureId(payload.currentFixtureId);
-        localStorage.setItem(`${STORAGE_KEY}_CURRENT_ID`, JSON.stringify(payload.currentFixtureId));
+        writeLS(`${STORAGE_KEY}_CURRENT_ID`, payload.currentFixtureId);
       }
       if (payload.auditLogs !== undefined) {
         setAuditLogs(payload.auditLogs);
-        localStorage.setItem(`${STORAGE_KEY}_LOGS`, JSON.stringify(payload.auditLogs));
+        writeLS(`${STORAGE_KEY}_LOGS`, payload.auditLogs);
       }
       setLastSync(new Date().toLocaleTimeString());
     } catch (e) {
@@ -122,47 +111,29 @@ export function TournamentProvider({ children }) {
   // Multi-tier broadcast: WebRTC DataChannel + /api/state backend + BroadcastChannel + localStorage
   const broadcast = useCallback((updates) => {
     try {
-      // 1. Update local cache
-      if (updates.datasetMeta !== undefined) {
-        localStorage.setItem(`${STORAGE_KEY}_DATASET_META`, JSON.stringify(updates.datasetMeta));
-      }
-      if (updates.participants !== undefined) {
-        localStorage.setItem(`${STORAGE_KEY}_PARTICIPANTS`, JSON.stringify(updates.participants));
-      }
-      if (updates.operatorCategory !== undefined) {
-        localStorage.setItem(`${STORAGE_KEY}_OPERATOR_CATEGORY`, JSON.stringify(updates.operatorCategory));
-      }
-      if (updates.fixtures !== undefined) {
-        localStorage.setItem(`${STORAGE_KEY}_FIXTURES`, JSON.stringify(updates.fixtures));
-      }
-      if (updates.currentFixtureId !== undefined) {
-        localStorage.setItem(`${STORAGE_KEY}_CURRENT_ID`, JSON.stringify(updates.currentFixtureId));
-      }
-      if (updates.auditLogs !== undefined) {
-        localStorage.setItem(`${STORAGE_KEY}_LOGS`, JSON.stringify(updates.auditLogs));
-      }
+      // 1. Update localStorage cache
+      if (updates.datasetMeta !== undefined) writeLS(`${STORAGE_KEY}_DATASET_META`, updates.datasetMeta);
+      if (updates.participants !== undefined) writeLS(`${STORAGE_KEY}_PARTICIPANTS`, updates.participants);
+      if (updates.operatorCategory !== undefined) writeLS(`${STORAGE_KEY}_OPERATOR_CATEGORY`, updates.operatorCategory);
+      if (updates.fixtures !== undefined) writeLS(`${STORAGE_KEY}_FIXTURES`, updates.fixtures);
+      if (updates.currentFixtureId !== undefined) writeLS(`${STORAGE_KEY}_CURRENT_ID`, updates.currentFixtureId);
+      if (updates.auditLogs !== undefined) writeLS(`${STORAGE_KEY}_LOGS`, updates.auditLogs);
 
       setLastSync(new Date().toLocaleTimeString());
 
       // 2. BroadcastChannel for same-device cross-tab communication
       try {
         const channel = new BroadcastChannel(CHANNEL_NAME);
-        channel.postMessage({
-          type: "STATE_UPDATE",
-          payload: updates
-        });
+        channel.postMessage({ type: "STATE_UPDATE", payload: updates });
         channel.close();
       } catch {}
 
-      // 3. WebRTC DataChannel: push to all connected laptops/displays instantly (<30ms)
+      // 3. WebRTC DataChannel: push to connected display peer(s) instantly (<30ms)
       if (activeConnectionsRef.current.length > 0) {
         activeConnectionsRef.current.forEach(conn => {
           try {
             if (conn.open) {
-              conn.send({
-                type: "STATE_UPDATE",
-                payload: updates
-              });
+              conn.send({ type: "STATE_UPDATE", payload: updates });
             }
           } catch (err) {
             console.warn("Peer broadcast error:", err);
@@ -170,7 +141,7 @@ export function TournamentProvider({ children }) {
         });
       }
 
-      // 4. Serverless API persistence: sync with Vercel /api/state and optional Vercel KV
+      // 4. Serverless API persistence: sync with Vercel /api/state
       fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -179,52 +150,54 @@ export function TournamentProvider({ children }) {
           operatorPeerId: operatorPeerIdRef.current
         })
       })
-        .then(r => r.json())
+        .then(r => (r.ok ? r.json() : null))
         .then(data => {
-          if (data?.version) {
-            localVersionRef.current = data.version;
+          if (!data) return;
+          if (data.version) {
+            localVersionRef.current = Math.max(localVersionRef.current, data.version);
           }
           setDbStatus("ONLINE");
         })
-        .catch(() => {
-          // Offline / network hiccup handled gracefully
-        });
+        .catch(() => {});
 
     } catch (e) {
       console.warn("Broadcast error:", e);
     }
   }, []);
 
-  // Realtime Sync Engine: WebRTC PeerJS + HTTP Watchdog Polling + BroadcastChannel
+  // Stable Realtime Sync Engine: Initialized ONCE on mount to eliminate flickering & reconnections
   useEffect(() => {
     let isMounted = true;
 
     // 1. Initial State Fetch from Vercel backend /api/state
     fetch('/api/state')
-      .then(r => r.json())
+      .then(r => (r.ok ? r.json() : null))
       .then(data => {
         if (!isMounted || !data) return;
         if (data.version) localVersionRef.current = data.version;
 
+        const currentSnapshot = stateRef.current;
+        const hasLocalData = (currentSnapshot.participants && currentSnapshot.participants.length > 0) ||
+                             (currentSnapshot.fixtures && currentSnapshot.fixtures.length > 0);
+
         if (data.tournamentState) {
-          // If on /display or local state is empty, hydrate from persistent backend
-          const hasLocalData = participants.length > 0 || fixtures.length > 0;
+          // If on /display or operator has zero local data, hydrate from backend
           if (isDisplay || !hasLocalData) {
             applyRemoteState(data.tournamentState);
           }
-        } else if (!isDisplay && (participants.length > 0 || fixtures.length > 0)) {
+        } else if (!isDisplay && hasLocalData) {
           // Seed server with operator's initial state if server is blank
           fetch('/api/state', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               tournamentState: {
-                datasetMeta,
-                participants,
-                operatorCategory,
-                fixtures,
-                currentFixtureId,
-                auditLogs
+                datasetMeta: currentSnapshot.datasetMeta,
+                participants: currentSnapshot.participants,
+                operatorCategory: currentSnapshot.operatorCategory,
+                fixtures: currentSnapshot.fixtures,
+                currentFixtureId: currentSnapshot.currentFixtureId,
+                auditLogs: currentSnapshot.auditLogs
               }
             })
           }).catch(() => {});
@@ -232,21 +205,22 @@ export function TournamentProvider({ children }) {
       })
       .catch(() => {});
 
-    // 2. BroadcastChannel listener (same device)
+    // 2. BroadcastChannel listener (same device cross-tab)
     let channel;
     try {
       channel = new BroadcastChannel(CHANNEL_NAME);
       channel.onmessage = (event) => {
         if (!isMounted) return;
-        if (event.data?.type === "STATE_UPDATE") {
+        // On display, always apply. On operator, only apply if we receive a remote update
+        if (event.data?.type === "STATE_UPDATE" && isDisplay) {
           applyRemoteState(event.data.payload);
         }
       };
     } catch {}
 
-    // 3. Storage event listener (same device fallback)
+    // 3. Storage event listener (same device cross-tab fallback)
     const handleStorage = (e) => {
-      if (!e.key || !e.key.startsWith(STORAGE_KEY)) return;
+      if (!isMounted || !isDisplay || !e.key || !e.key.startsWith(STORAGE_KEY)) return;
       try {
         if (e.key === `${STORAGE_KEY}_DATASET_META`) setDatasetMeta(e.newValue ? JSON.parse(e.newValue) : null);
         if (e.key === `${STORAGE_KEY}_PARTICIPANTS`) setParticipants(e.newValue ? JSON.parse(e.newValue) : []);
@@ -259,7 +233,7 @@ export function TournamentProvider({ children }) {
     };
     window.addEventListener('storage', handleStorage);
 
-    // 4. WebRTC Connection Setup via PeerJS
+    // 4. WebRTC Connection Setup via PeerJS (Persistent connection)
     let peerInstance = null;
     const connectToOperator = (targetPeerId) => {
       if (!peerRef.current || !targetPeerId || targetPeerId === connectedPeerIdRef.current) return;
@@ -280,14 +254,12 @@ export function TournamentProvider({ children }) {
           }
         });
 
-        conn.on('close', () => {
+        const handleDisconnect = () => {
           connectedPeerIdRef.current = null;
           if (isMounted) setRealtimeStatus("SYNCING");
-        });
-
-        conn.on('error', () => {
-          connectedPeerIdRef.current = null;
-        });
+        };
+        conn.on('close', handleDisconnect);
+        conn.on('error', handleDisconnect);
       } catch (err) {
         console.warn("Peer connection error:", err);
       }
@@ -305,7 +277,6 @@ export function TournamentProvider({ children }) {
             if (!isMounted) return;
             operatorPeerIdRef.current = id;
             setRealtimeStatus("CONNECTED");
-            // Announce active operator peer ID to backend
             fetch('/api/state', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -318,18 +289,11 @@ export function TournamentProvider({ children }) {
               activeConnectionsRef.current.push(conn);
               setDisplayConnected(true);
               setRealtimeStatus("CONNECTED");
-              // Send full state to newly connected display
+              // Send latest full state to newly connected display
               try {
                 conn.send({
                   type: 'FULL_STATE',
-                  payload: {
-                    datasetMeta,
-                    participants,
-                    operatorCategory,
-                    fixtures,
-                    currentFixtureId,
-                    auditLogs
-                  }
+                  payload: { ...stateRef.current }
                 });
               } catch {}
             });
@@ -344,11 +308,11 @@ export function TournamentProvider({ children }) {
             conn.on('error', removeConn);
           });
         } else {
-          // DISPLAY: Connect to operator
+          // DISPLAY: Fetch operator's peer ID and connect
           peerInstance.on('open', () => {
             if (!isMounted) return;
             fetch('/api/state')
-              .then(r => r.json())
+              .then(r => (r.ok ? r.json() : null))
               .then(d => {
                 if (d?.operatorPeerId) {
                   connectToOperator(d.operatorPeerId);
@@ -359,32 +323,29 @@ export function TournamentProvider({ children }) {
         }
 
         peerInstance.on('error', (err) => {
-          console.warn("PeerJS note:", err?.type || err);
-          // Seamlessly continues via HTTP polling watchdog!
+          console.warn("PeerJS notice:", err?.type || err);
         });
       }
     } catch (e) {
-      console.warn("PeerJS initialization note:", e);
+      console.warn("PeerJS initialization notice:", e);
     }
 
-    // 5. Watchdog HTTP Polling (Every 1500ms): Guarantees synchronization across separate laptops
+    // 5. Watchdog Polling (Every 1500ms): Guarantees cross-device sync without operator flicker
     const pollInterval = setInterval(() => {
       fetch('/api/state')
-        .then(r => r.json())
+        .then(r => (r.ok ? r.json() : null))
         .then(data => {
           if (!isMounted || !data) return;
           setDbStatus("ONLINE");
           setRealtimeStatus("CONNECTED");
 
-          // If backend has newer state version, update display
-          if (data.version && data.version > localVersionRef.current) {
+          // CRITICAL: ONLY Display applies remote state from polling to prevent Operator state oscillation/flicker!
+          if (isDisplay && data.tournamentState && data.version && data.version > localVersionRef.current) {
             localVersionRef.current = data.version;
-            if (data.tournamentState) {
-              applyRemoteState(data.tournamentState);
-            }
+            applyRemoteState(data.tournamentState);
           }
 
-          // If on display and operator peer became available, connect WebRTC
+          // If on display and operator peer is newly registered, establish WebRTC
           if (isDisplay && data.operatorPeerId && data.operatorPeerId !== connectedPeerIdRef.current) {
             connectToOperator(data.operatorPeerId);
           }
@@ -403,10 +364,11 @@ export function TournamentProvider({ children }) {
         try { peerInstance.destroy(); } catch {}
       }
     };
-  }, [applyRemoteState, isDisplay, participants.length, fixtures.length, datasetMeta, operatorCategory, currentFixtureId, auditLogs]);
+  }, [isDisplay, applyRemoteState]);
 
   // Helper to append an audit log
-  const logAction = useCallback((action, description) => {
+  const logAction = (action, description) => {
+    const currentLogs = stateRef.current.auditLogs || [];
     const newLog = {
       id: Date.now() + Math.random().toString(36).substr(2, 5),
       timestamp: new Date().toLocaleTimeString(),
@@ -414,15 +376,15 @@ export function TournamentProvider({ children }) {
       description,
       operator: "Admin Operator (Mat 1)"
     };
-    const updated = [newLog, ...auditLogs];
+    const updated = [newLog, ...currentLogs.slice(0, 99)];
     setAuditLogs(updated);
     return updated;
-  }, [auditLogs]);
+  };
 
   // Derive Current Fixture
   const currentFixture = fixtures.find(f => f.id === currentFixtureId) || fixtures[0] || null;
 
-  // Upcoming fixtures (excluding the current one)
+  // Upcoming fixtures (excluding current)
   const remainingFixtures = fixtures.filter(
     f => f.id !== currentFixture?.id && (f.status === "PENDING" || f.status === "ONGOING")
   );
@@ -472,36 +434,45 @@ export function TournamentProvider({ children }) {
   const addParticipant = (newParticipant) => {
     const updated = [newParticipant, ...participants];
     setParticipants(updated);
+    let updatedMeta = datasetMeta;
     if (datasetMeta) {
-      const updatedMeta = { ...datasetMeta, recordCount: updated.length };
+      updatedMeta = { ...datasetMeta, recordCount: updated.length };
       setDatasetMeta(updatedMeta);
-      broadcast({ participants: updated, datasetMeta: updatedMeta });
-    } else {
-      broadcast({ participants: updated });
     }
-    logAction("PARTICIPANT_ADDED", `Added participant: ${newParticipant.name} (${newParticipant.college})`);
+    const updatedLogs = logAction("PARTICIPANT_ADDED", `Added participant: ${newParticipant.name} (${newParticipant.college})`);
+    broadcast({
+      participants: updated,
+      ...(updatedMeta ? { datasetMeta: updatedMeta } : {}),
+      auditLogs: updatedLogs
+    });
   };
 
   // Update single participant
   const updateParticipant = (participant_id, fields) => {
     const updated = participants.map(p => p.participant_id === participant_id ? { ...p, ...fields } : p);
     setParticipants(updated);
-    broadcast({ participants: updated });
-    logAction("PARTICIPANT_UPDATED", `Updated participant ${participant_id}: ${fields.name || ''}`);
+    const updatedLogs = logAction("PARTICIPANT_UPDATED", `Updated participant ${participant_id}: ${fields.name || ''}`);
+    broadcast({
+      participants: updated,
+      auditLogs: updatedLogs
+    });
   };
 
   // Delete single participant
   const deleteParticipant = (participant_id) => {
     const updated = participants.filter(p => p.participant_id !== participant_id);
     setParticipants(updated);
+    let updatedMeta = datasetMeta;
     if (datasetMeta) {
-      const updatedMeta = { ...datasetMeta, recordCount: updated.length };
+      updatedMeta = { ...datasetMeta, recordCount: updated.length };
       setDatasetMeta(updatedMeta);
-      broadcast({ participants: updated, datasetMeta: updatedMeta });
-    } else {
-      broadcast({ participants: updated });
     }
-    logAction("PARTICIPANT_DELETED", `Deleted participant ID ${participant_id}`);
+    const updatedLogs = logAction("PARTICIPANT_DELETED", `Deleted participant ID ${participant_id}`);
+    broadcast({
+      participants: updated,
+      ...(updatedMeta ? { datasetMeta: updatedMeta } : {}),
+      auditLogs: updatedLogs
+    });
   };
 
   // Matchup Creation: Add to ordered queue without interrupting live match
