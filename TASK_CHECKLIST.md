@@ -36,5 +36,11 @@ Handoff and state tracking document for AI coding agents.
 - [x] Clean build verification (`vite build` exit code 0)
 - [x] Git repository initialization and push to remote
 - [x] Increase VTU logo size and apply rounded badge styling to match header aesthetics
+- [x] Multi-tier Vercel-compatible persistent shared state engine (`/api/state` + WebRTC DataChannels)
+- [x] Cross-laptop realtime synchronization without Supabase or PostgreSQL
+- [x] Operator route (`/`) and spectator display (`/display`) state synchronization
+- [x] Resilient watchdog polling (1.5s interval) and offline localStorage fallback
+- [x] Optional Vercel KV / Upstash Redis support in serverless API endpoint
+
 
 
