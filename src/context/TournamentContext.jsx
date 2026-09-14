@@ -12,6 +12,8 @@ const DEFAULT_CATEGORY = {
 };
 
 export function TournamentProvider({ children }) {
+  const isDisplay = typeof window !== 'undefined' && window.location.pathname.startsWith('/display');
+
   // 1. Dataset metadata & Participants list (initialized with localStorage cache for instant offline load)
   const [datasetMeta, setDatasetMeta] = useState(() => {
     try {
@@ -196,7 +198,6 @@ export function TournamentProvider({ children }) {
   // Realtime Sync Engine: WebRTC PeerJS + HTTP Watchdog Polling + BroadcastChannel
   useEffect(() => {
     let isMounted = true;
-    const isDisplay = typeof window !== 'undefined' && window.location.pathname.startsWith('/display');
 
     // 1. Initial State Fetch from Vercel backend /api/state
     fetch('/api/state')
