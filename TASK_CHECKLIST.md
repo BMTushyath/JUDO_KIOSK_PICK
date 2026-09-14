@@ -35,4 +35,6 @@ Handoff and state tracking document for AI coding agents.
 - [x] Remove unused files and directories (`src/data`, `scripts`, `test_data`, legacy logos)
 - [x] Clean build verification (`vite build` exit code 0)
 - [x] Git repository initialization and push to remote
+- [x] Increase VTU logo size and apply rounded badge styling to match header aesthetics
+
 

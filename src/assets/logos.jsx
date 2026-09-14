@@ -5,7 +5,7 @@ import React from 'react';
    User-provided full logo image with text.
    Wider aspect ratio — sized to fit neatly inside the black header box.
 ================================================================ */
-export function VtuLogo({ className = "", height = 54 }) {
+export function VtuLogo({ className = "", height = 72 }) {
   return (
     <div 
       className={className} 
@@ -15,14 +15,19 @@ export function VtuLogo({ className = "", height = 54 }) {
         justifyContent: 'center',
         height: height + 'px',
         maxHeight: '100%',
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        background: '#ffffff',
+        borderRadius: '8px',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
+        padding: '2px 8px',
+        overflow: 'hidden'
       }}
     >
       <img
         src="/assets/vtu_logo_full.png"
         alt="Visvesvaraya Technological University, Belagavi"
         style={{
-          height: height + 'px',
+          height: (height - 6) + 'px',
           width: 'auto',
           maxWidth: '100%',
           objectFit: 'contain',

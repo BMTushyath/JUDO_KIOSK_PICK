@@ -57,7 +57,7 @@ export default function DisplayPage() {
         <header className="display-header">
           <div className="display-black-logo-header">
             <div className="logo-box left">
-              <VtuLogo height={54} />
+              <VtuLogo height={72} />
             </div>
             <div className="display-black-logo-divider" />
             <div className="logo-box right">
