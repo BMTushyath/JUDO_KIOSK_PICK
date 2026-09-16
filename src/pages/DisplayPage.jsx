@@ -6,11 +6,11 @@ import ConfettiCelebration from '../components/ConfettiCelebration';
 import './DisplayPage.css';
 
 export default function DisplayPage() {
-  const { 
-    operatorCategory, 
-    currentFixture, 
+  const {
+    operatorCategory,
+    currentFixture,
     nextFixtures,
-    fixtures 
+    fixtures
   } = useTournament();
 
   // Live global real-time clock (updates every second)
@@ -67,17 +67,17 @@ export default function DisplayPage() {
         <header className="display-header">
           <div className="display-black-logo-header">
             <div className="logo-box left">
-              <VtuLogo height={72} />
+              <VtuLogo height={82} />
             </div>
             <div className="display-black-logo-divider" />
             <div className="logo-box right">
-              <SambhramLogoGroup height={46} />
+              <SambhramLogoGroup height={82} />
             </div>
           </div>
 
           <div className="display-titles">
             <h1 className="display-main-title">
-              VTU Intercollegiate State Level Judo Competition and Selection Trials- 2026-27
+              VTU Intercollegiate State Level Judo Competition - 2026-27
             </h1>
             <div className="display-sub-title">SAMBHRAM INSTITUTE OF TECHNOLOGY</div>
           </div>

@@ -5,7 +5,7 @@ import React from 'react';
    User-provided full logo image with text.
    Wider aspect ratio — sized to fit neatly inside the black header box.
 ================================================================ */
-export function VtuLogo({ className = "", height = 72 }) {
+export function VtuLogo({ className = "", height = 82, width = "100%", style = {} }) {
   return (
     <div 
       className={className} 
@@ -13,21 +13,23 @@ export function VtuLogo({ className = "", height = 72 }) {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'center',
-        height: height + 'px',
-        maxHeight: '100%',
+        height: '100%',
+        width: width,
         boxSizing: 'border-box',
         background: '#ffffff',
-        borderRadius: '8px',
+        borderRadius: '10px',
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
-        padding: '2px 8px',
-        overflow: 'hidden'
+        padding: '4px 14px',
+        overflow: 'hidden',
+        ...style
       }}
     >
       <img
         src="/assets/vtu_logo_full.png"
         alt="Visvesvaraya Technological University, Belagavi"
         style={{
-          height: (height - 6) + 'px',
+          height: '100%',
+          maxHeight: '74px',
           width: 'auto',
           maxWidth: '100%',
           objectFit: 'contain',
@@ -40,51 +42,55 @@ export function VtuLogo({ className = "", height = 72 }) {
 
 
 /* ================================================================
-   Sambhram Logo Group - UNCHANGED
+   Sambhram Logo Group
    - Sambhram name + 25 years emblem in clean white pill
 ================================================================ */
-export function SambhramLogoGroup({ className = "", height = 46 }) {
+export function SambhramLogoGroup({ className = "", height = 82, width = "100%", style = {} }) {
   return (
     <div
       className={className}
       style={{
-        display: 'inline-flex',
+        display: 'flex',
         alignItems: 'center',
+        justifyContent: 'center',
         background: '#ffffff',
-        borderRadius: '8px',
+        borderRadius: '10px',
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
-        padding: '3px 8px',
-        height: height + 'px',
-        maxHeight: '100%',
+        padding: '4px 16px',
+        height: '100%',
+        width: width,
         boxSizing: 'border-box',
-        gap: '6px'
+        gap: '20px',
+        overflow: 'hidden',
+        ...style
       }}
     >
       <img
         src="/assets/sambhram_name_logo.jpg"
         alt="Sambhram Institute of Technology"
         style={{ 
-          height: (height - 8) + 'px', 
+          height: '100%',
+          maxHeight: '66px',
           width: 'auto', 
-          maxWidth: '160px',
+          maxWidth: '65%',
           objectFit: 'contain', 
           display: 'block' 
         }}
       />
       <div style={{
-        width: '1px',
-        height: (height - 14) + 'px',
+        width: '2px',
+        height: '52px',
         background: 'rgba(0,0,0,0.15)',
-        margin: '0 2px',
         flexShrink: 0
       }} />
       <img
         src="/assets/sambhram_25years_logo.jpg"
         alt="Sambhram 25 Years"
         style={{ 
-          height: (height - 4) + 'px', 
+          height: '100%',
+          maxHeight: '66px',
           width: 'auto', 
-          maxWidth: '60px',
+          maxWidth: '30%',
           objectFit: 'contain', 
           display: 'block' 
         }}
