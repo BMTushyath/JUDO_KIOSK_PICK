@@ -44,6 +44,9 @@ export default async function handler(req, res) {
         const stored = await redis.get('VTU_JUDO_TOURNAMENT_STATE');
         if (stored) {
           const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
+          if (parsed && (parsed.version || 0) >= (memoryState.version || 0)) {
+            memoryState = parsed;
+          }
           return res.status(200).json(parsed);
         }
       }
@@ -59,6 +62,9 @@ export default async function handler(req, res) {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       
       let currentStoredState = memoryState.tournamentState || {};
+      let storedVersion = memoryState.version || 0;
+      let storedLastUpdated = memoryState.lastUpdated || 0;
+
       if (redis) {
         try {
           const stored = await redis.get('VTU_JUDO_TOURNAMENT_STATE');
@@ -67,22 +73,31 @@ export default async function handler(req, res) {
             if (parsed?.tournamentState) {
               currentStoredState = parsed.tournamentState;
             }
+            if (parsed?.version) {
+              storedVersion = Math.max(storedVersion, Number(parsed.version));
+            }
+            if (parsed?.lastUpdated) {
+              storedLastUpdated = Math.max(storedLastUpdated, Number(parsed.lastUpdated));
+            }
           }
         } catch (e) {
           // ignore redis read error
         }
       }
 
+      const incomingVersion = Number(body.version) || 0;
+      const newVersion = Math.max(storedVersion, incomingVersion) + 1;
+      const newLastUpdated = Math.max(Date.now(), storedLastUpdated, Number(body.lastUpdated) || 0);
+
       const mergedTournamentState = body.tournamentState !== undefined
-        ? { ...currentStoredState, ...body.tournamentState }
+        ? (body.isFullState ? body.tournamentState : { ...currentStoredState, ...body.tournamentState })
         : currentStoredState;
 
-      const newVersion = (memoryState.version || 0) + 1;
       const updated = {
         tournamentState: mergedTournamentState,
         operatorPeerId: body.operatorPeerId !== undefined ? body.operatorPeerId : memoryState.operatorPeerId,
         version: newVersion,
-        lastUpdated: Date.now()
+        lastUpdated: newLastUpdated
       };
       memoryState = updated;
 

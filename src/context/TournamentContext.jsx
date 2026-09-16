@@ -48,6 +48,7 @@ export function TournamentProvider({ children }) {
 
   // References for WebRTC and synchronization to prevent re-renders & connection churn
   const localVersionRef = useRef(0);
+  const lastUpdatedRef = useRef(Date.now());
   const operatorPeerIdRef = useRef(null);
   const connectedPeerIdRef = useRef(null);
   const activeConnectionsRef = useRef([]);
@@ -111,6 +112,12 @@ export function TournamentProvider({ children }) {
   // Multi-tier broadcast: WebRTC DataChannel + /api/state backend + BroadcastChannel + localStorage
   const broadcast = useCallback((updates) => {
     try {
+      // Advance monotonic state version and timestamp
+      localVersionRef.current = (localVersionRef.current || 0) + 1;
+      const currentVersion = localVersionRef.current;
+      const currentTimestamp = Date.now();
+      lastUpdatedRef.current = currentTimestamp;
+
       // 1. Update localStorage cache
       if (updates.datasetMeta !== undefined) writeLS(`${STORAGE_KEY}_DATASET_META`, updates.datasetMeta);
       if (updates.participants !== undefined) writeLS(`${STORAGE_KEY}_PARTICIPANTS`, updates.participants);
@@ -124,7 +131,12 @@ export function TournamentProvider({ children }) {
       // 2. BroadcastChannel for same-device cross-tab communication
       try {
         const channel = new BroadcastChannel(CHANNEL_NAME);
-        channel.postMessage({ type: "STATE_UPDATE", payload: updates });
+        channel.postMessage({
+          type: "STATE_UPDATE",
+          payload: updates,
+          version: currentVersion,
+          lastUpdated: currentTimestamp
+        });
         channel.close();
       } catch {}
 
@@ -133,7 +145,12 @@ export function TournamentProvider({ children }) {
         activeConnectionsRef.current.forEach(conn => {
           try {
             if (conn.open) {
-              conn.send({ type: "STATE_UPDATE", payload: updates });
+              conn.send({
+                type: "STATE_UPDATE",
+                payload: updates,
+                version: currentVersion,
+                lastUpdated: currentTimestamp
+              });
             }
           } catch (err) {
             console.warn("Peer broadcast error:", err);
@@ -141,12 +158,20 @@ export function TournamentProvider({ children }) {
         });
       }
 
-      // 4. Serverless API persistence: sync with Vercel /api/state
+      // 4. Serverless API persistence: sync full state with Vercel /api/state to avoid partial merge drops
+      const fullSnapshot = {
+        ...stateRef.current,
+        ...updates
+      };
+
       fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tournamentState: updates,
+          tournamentState: fullSnapshot,
+          isFullState: true,
+          version: currentVersion,
+          lastUpdated: currentTimestamp,
           operatorPeerId: operatorPeerIdRef.current
         })
       })
@@ -155,6 +180,9 @@ export function TournamentProvider({ children }) {
           if (!data) return;
           if (data.version) {
             localVersionRef.current = Math.max(localVersionRef.current, data.version);
+          }
+          if (data.lastUpdated) {
+            lastUpdatedRef.current = Math.max(lastUpdatedRef.current, data.lastUpdated);
           }
           setDbStatus("ONLINE");
         })
@@ -174,7 +202,8 @@ export function TournamentProvider({ children }) {
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
         if (!isMounted || !data) return;
-        if (data.version) localVersionRef.current = data.version;
+        if (data.version) localVersionRef.current = Math.max(localVersionRef.current, data.version);
+        if (data.lastUpdated) lastUpdatedRef.current = Math.max(lastUpdatedRef.current, data.lastUpdated);
 
         const currentSnapshot = stateRef.current;
         const hasLocalData = (currentSnapshot.participants && currentSnapshot.participants.length > 0) ||
@@ -198,7 +227,10 @@ export function TournamentProvider({ children }) {
                 fixtures: currentSnapshot.fixtures,
                 currentFixtureId: currentSnapshot.currentFixtureId,
                 auditLogs: currentSnapshot.auditLogs
-              }
+              },
+              isFullState: true,
+              version: localVersionRef.current,
+              lastUpdated: lastUpdatedRef.current
             })
           }).catch(() => {});
         }
@@ -211,8 +243,13 @@ export function TournamentProvider({ children }) {
       channel = new BroadcastChannel(CHANNEL_NAME);
       channel.onmessage = (event) => {
         if (!isMounted) return;
-        // On display, always apply. On operator, only apply if we receive a remote update
         if (event.data?.type === "STATE_UPDATE" && isDisplay) {
+          if (event.data.version) {
+            localVersionRef.current = Math.max(localVersionRef.current, Number(event.data.version) || 0);
+          }
+          if (event.data.lastUpdated) {
+            lastUpdatedRef.current = Math.max(lastUpdatedRef.current, Number(event.data.lastUpdated) || 0);
+          }
           applyRemoteState(event.data.payload);
         }
       };
@@ -250,6 +287,12 @@ export function TournamentProvider({ children }) {
         conn.on('data', (data) => {
           if (!isMounted || !data) return;
           if (data.type === 'FULL_STATE' || data.type === 'STATE_UPDATE') {
+            if (data.version) {
+              localVersionRef.current = Math.max(localVersionRef.current, Number(data.version) || 0);
+            }
+            if (data.lastUpdated) {
+              lastUpdatedRef.current = Math.max(lastUpdatedRef.current, Number(data.lastUpdated) || 0);
+            }
             applyRemoteState(data.payload);
           }
         });
@@ -293,7 +336,9 @@ export function TournamentProvider({ children }) {
               try {
                 conn.send({
                   type: 'FULL_STATE',
-                  payload: { ...stateRef.current }
+                  payload: { ...stateRef.current },
+                  version: localVersionRef.current,
+                  lastUpdated: lastUpdatedRef.current
                 });
               } catch {}
             });
@@ -330,7 +375,7 @@ export function TournamentProvider({ children }) {
       console.warn("PeerJS initialization notice:", e);
     }
 
-    // 5. Watchdog Polling (Every 1500ms): Guarantees cross-device sync without operator flicker
+    // 5. Watchdog Polling (Every 1500ms): Guarantees cross-device sync without race condition overwrites
     const pollInterval = setInterval(() => {
       fetch('/api/state')
         .then(r => (r.ok ? r.json() : null))
@@ -339,10 +384,17 @@ export function TournamentProvider({ children }) {
           setDbStatus("ONLINE");
           setRealtimeStatus("CONNECTED");
 
-          // CRITICAL: ONLY Display applies remote state from polling to prevent Operator state oscillation/flicker!
-          if (isDisplay && data.tournamentState && data.version && data.version > localVersionRef.current) {
-            localVersionRef.current = data.version;
-            applyRemoteState(data.tournamentState);
+          // CRITICAL: ONLY apply if remote state is strictly NEWER than our current local version/timestamp
+          if (isDisplay && data.tournamentState) {
+            const incomingVersion = Number(data.version) || 0;
+            const incomingUpdated = Number(data.lastUpdated) || 0;
+            const isNewer = (incomingVersion > localVersionRef.current) || (incomingUpdated > (lastUpdatedRef.current || 0));
+
+            if (isNewer) {
+              localVersionRef.current = Math.max(localVersionRef.current, incomingVersion);
+              lastUpdatedRef.current = Math.max(lastUpdatedRef.current, incomingUpdated);
+              applyRemoteState(data.tournamentState);
+            }
           }
 
           // If on display and operator peer is newly registered, establish WebRTC
@@ -485,12 +537,14 @@ export function TournamentProvider({ children }) {
       participant1: {
         id: player1.participant_id || player1.id || "P1",
         name: player1.name,
-        college: player1.college
+        college: player1.college,
+        photo: player1.photo || null
       },
       participant2: {
         id: player2.participant_id || player2.id || "P2",
         name: player2.name,
-        college: player2.college
+        college: player2.college,
+        photo: player2.photo || null
       },
       status: isFirstFixture ? "ONGOING" : "PENDING",
       winnerId: null
@@ -605,7 +659,7 @@ export function TournamentProvider({ children }) {
         return { ...f, status: "COMPLETED" };
       }
       if (f.id === nextFixture.id) {
-        return { ...f, status: "ONGOING" };
+        return { ...f, status: "ONGOING", winnerId: null };
       }
       return f;
     });
@@ -625,14 +679,25 @@ export function TournamentProvider({ children }) {
     });
   };
 
-  // Select fixture directly
+  // Select fixture directly ("Make Active")
+  // Ensures target fixture is ONGOING, previous ongoing fixtures return to PENDING, and updates broadcast reliably
   const selectFixture = (fixtureId) => {
     const target = fixtures.find(f => f.id === fixtureId);
     if (!target) return;
 
     const updatedFixtures = fixtures.map(f => {
-      if (f.id === fixtureId && f.status === 'PENDING') {
-        return { ...f, status: 'ONGOING' };
+      if (f.id === fixtureId) {
+        return {
+          ...f,
+          status: 'ONGOING',
+          winnerId: null
+        };
+      }
+      if (f.status === 'ONGOING') {
+        return {
+          ...f,
+          status: 'PENDING'
+        };
       }
       return f;
     });

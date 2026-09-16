@@ -26,7 +26,8 @@ import {
   ArrowDown,
   FileSpreadsheet,
   Check,
-  Download
+  Download,
+  Camera
 } from 'lucide-react';
 import './AdminPage.css';
 import * as XLSX from 'xlsx';
@@ -137,6 +138,23 @@ export default function AdminPage() {
     p.college?.toLowerCase().includes(searchParticipant.toLowerCase()) ||
     p.participant_id?.toLowerCase().includes(searchParticipant.toLowerCase())
   );
+
+  const handleMakeActive = (fixture) => {
+    if (!fixture.participant1?.photo || !fixture.participant2?.photo) {
+      alert("Participant photo is REQUIRED for both athletes to proceed to an ongoing fixture. Please ensure photos are attached.");
+      return;
+    }
+    selectFixture(fixture.id);
+  };
+
+  const handleShowNext = () => {
+    const nextFixture = remainingFixtures[0];
+    if (nextFixture && (!nextFixture.participant1?.photo || !nextFixture.participant2?.photo)) {
+      alert("Participant photo is REQUIRED for both athletes to proceed to an ongoing fixture. Please ensure photos are attached before advancing.");
+      return;
+    }
+    showNextFixture();
+  };
 
   return (
     <div className="admin-layout">
@@ -369,9 +387,18 @@ export default function AdminPage() {
                           )}
                         </div>
 
-                        <div>
-                          <div className="p-name-main">{currentFixture?.participant1?.name}</div>
-                          <div className="p-college-sub">{currentFixture?.participant1?.college}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', margin: '8px 0' }}>
+                          <div style={{ width: '56px', height: '66px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#e2e8f0', border: '2px solid #0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {currentFixture?.participant1?.photo ? (
+                              <img src={currentFixture.participant1.photo} alt={currentFixture.participant1.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <Camera size={24} color="#94a3b8" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="p-name-main">{currentFixture?.participant1?.name}</div>
+                            <div className="p-college-sub">{currentFixture?.participant1?.college}</div>
+                          </div>
                         </div>
 
                         {isCompleted ? (
@@ -412,9 +439,18 @@ export default function AdminPage() {
                           )}
                         </div>
 
-                        <div>
-                          <div className="p-name-main">{currentFixture?.participant2?.name}</div>
-                          <div className="p-college-sub">{currentFixture?.participant2?.college}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', margin: '8px 0' }}>
+                          <div style={{ width: '56px', height: '66px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#e2e8f0', border: '2px solid #0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {currentFixture?.participant2?.photo ? (
+                              <img src={currentFixture.participant2.photo} alt={currentFixture.participant2.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <Camera size={24} color="#94a3b8" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="p-name-main">{currentFixture?.participant2?.name}</div>
+                            <div className="p-college-sub">{currentFixture?.participant2?.college}</div>
+                          </div>
                         </div>
 
                         {isCompleted ? (
@@ -479,7 +515,7 @@ export default function AdminPage() {
                         {/* SHOW NEXT FIXTURE (STRICT MANUAL CONTROL) */}
                         <button 
                           className="btn-show-next"
-                          onClick={showNextFixture}
+                          onClick={handleShowNext}
                           disabled={remainingFixtures.length === 0}
                           title={remainingFixtures.length === 0 ? "No more fixtures in queue" : "Advance to the next scheduled match in queue"}
                         >
@@ -550,7 +586,7 @@ export default function AdminPage() {
                       <button
                         className="btn-undo-result"
                         style={{ fontSize: '12px', padding: '6px 12px', flexShrink: 0 }}
-                        onClick={() => selectFixture(f.id)}
+                        onClick={() => handleMakeActive(f)}
                       >
                         Make Active
                       </button>
@@ -736,7 +772,7 @@ export default function AdminPage() {
                             className="btn-undo-result"
                             style={{ fontSize: '12px', padding: '6px 12px' }}
                             onClick={() => {
-                              selectFixture(f.id);
+                              handleMakeActive(f);
                               setActiveTab('match-control');
                             }}
                           >

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTournament } from '../context/TournamentContext';
 import { VtuLogo, SambhramLogoGroup, JudoGrapplersIcon, BlackBeltBanner } from '../assets/logos';
 import { Clock } from 'lucide-react';
+import ConfettiCelebration from '../components/ConfettiCelebration';
 import './DisplayPage.css';
 
 export default function DisplayPage() {
@@ -39,6 +40,7 @@ export default function DisplayPage() {
 
   const isP1Winner = isCompleted && winnerId === currentFixture?.participant1?.id;
   const isP2Winner = isCompleted && winnerId === currentFixture?.participant2?.id;
+  const winningParticipant = isP1Winner ? currentFixture?.participant1 : isP2Winner ? currentFixture?.participant2 : null;
 
   // Active category from operator control (Displayed ONLY for the Current Fixture)
   const displayGender = operatorCategory?.gender || "MEN";
@@ -46,11 +48,19 @@ export default function DisplayPage() {
 
   const hasFixtures = fixtures && fixtures.length > 0;
 
+  // FULL-SCREEN WINNER CELEBRATION ACTIVE:
+  // After operator declares winner, switch /display to full-screen winner celebration
+  // Showing ONLY the winner with continuous confetti until operator clicks "SHOW NEXT FIXTURE"
+  const showWinnerCelebration = hasFixtures && isCompleted && Boolean(winningParticipant);
+
   return (
     <div className="display-viewport" id="spectator-display-root">
       {/* Subtle Tatami rings watermark */}
       <div className="display-bg-rings" />
       <div className="display-bg-rings-left" />
+
+      {/* CONTINUOUS LOOPING WINNER CELEBRATION CONFETTI (Active entire time celebration is displayed) */}
+      {showWinnerCelebration && <ConfettiCelebration />}
 
       <main className="display-container">
         {/* Header Branding with Solid Black Logo Container */}
@@ -81,8 +91,52 @@ export default function DisplayPage() {
           </div>
         </header>
 
-        {/* DOMINANT HERO: CURRENT FIXTURE ONLY GETS GENDER + WEIGHT */}
-        {hasFixtures && currentFixture ? (
+        {/* 1. FULL-SCREEN WINNER CELEBRATION VIEW (SHOWS ONLY THE WINNER) */}
+        {showWinnerCelebration ? (
+          <section className="winner-celebration-screen" aria-label="Winner Celebration Screen">
+            <div className="winner-celebration-badge">
+              <span>👑</span>
+              <span>MATCH WINNER</span>
+              <span>👑</span>
+            </div>
+
+            {/* LARGE WINNER PHOTO */}
+            <div className="winner-photo-large-frame">
+              {winningParticipant?.photo ? (
+                <img
+                  src={winningParticipant.photo}
+                  alt={winningParticipant.name}
+                  className="winner-photo-large-img"
+                />
+              ) : (
+                <div className="contestant-photo-placeholder">
+                  <JudoGrapplersIcon color="#38bdf8" size={110} />
+                </div>
+              )}
+            </div>
+
+            {/* 👑 WINNER NAME */}
+            <div className="winner-celebration-name">
+              <span>👑</span>
+              <span>{winningParticipant?.name}</span>
+            </div>
+
+            {/* COLLEGE NAME */}
+            <div className="winner-celebration-college">
+              {winningParticipant?.college}
+            </div>
+
+            {/* Category / Mat Pill Group */}
+            <div className="winner-celebration-meta">
+              <span style={{ color: '#38bdf8', fontWeight: 800 }}>{displayGender}</span>
+              <span>•</span>
+              <span style={{ color: '#fbbf24', fontWeight: 800 }}>{displayWeight}</span>
+              <span>•</span>
+              <span style={{ color: '#ffffff', fontWeight: 800 }}>MAT 1</span>
+            </div>
+          </section>
+        ) : hasFixtures && currentFixture ? (
+          /* 2. STANDARD FIXTURE DISPLAY: CURRENT FIXTURE WITH PHOTOS ABOVE NAMES */
           <section className="current-match-card" aria-label="Current Judo Match">
             <div className="current-match-header">
               <div className="current-match-badge-title">
@@ -105,24 +159,33 @@ export default function DisplayPage() {
                 <div className="mat-pill">MAT 1</div>
               </div>
 
-              {/* Contestants Split Box */}
+              {/* Contestants Split Box: PHOTO STRICTLY ABOVE NAME */}
               <div className="contestants-container">
                 {/* Participant 1 */}
-                <div className={`contestant-card ${isP1Winner ? 'winner' : ''}`}>
-                  {isP1Winner && (
-                    <div className="winner-crown-badge">
-                      <span>👑</span>
-                      <span style={{ fontSize: '12px', textTransform: 'uppercase' }}>WINNER</span>
-                    </div>
-                  )}
+                <div className="contestant-card">
+                  {/* [ PARTICIPANT PHOTO ] */}
+                  <div className="contestant-photo-frame">
+                    {currentFixture?.participant1?.photo ? (
+                      <img
+                        src={currentFixture.participant1.photo}
+                        alt={currentFixture.participant1.name}
+                        className="contestant-photo-img"
+                      />
+                    ) : (
+                      <div className="contestant-photo-placeholder">
+                        <JudoGrapplersIcon color="#0284c7" size={72} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* [ PARTICIPANT NAME ] */}
                   <div className="contestant-name">
                     {currentFixture?.participant1?.name || "Participant 1"}
                   </div>
+
+                  {/* [ COLLEGE NAME ] */}
                   <div className="contestant-college">
                     {currentFixture?.participant1?.college || "College / Institution"}
-                  </div>
-                  <div className="contestant-icon">
-                    <JudoGrapplersIcon color="#0A192F" size={54} />
                   </div>
                 </div>
 
@@ -130,21 +193,30 @@ export default function DisplayPage() {
                 <div className="vs-badge">VS</div>
 
                 {/* Participant 2 */}
-                <div className={`contestant-card ${isP2Winner ? 'winner' : ''}`}>
-                  {isP2Winner && (
-                    <div className="winner-crown-badge">
-                      <span>👑</span>
-                      <span style={{ fontSize: '12px', textTransform: 'uppercase' }}>WINNER</span>
-                    </div>
-                  )}
+                <div className="contestant-card">
+                  {/* [ PARTICIPANT PHOTO ] */}
+                  <div className="contestant-photo-frame">
+                    {currentFixture?.participant2?.photo ? (
+                      <img
+                        src={currentFixture.participant2.photo}
+                        alt={currentFixture.participant2.name}
+                        className="contestant-photo-img"
+                      />
+                    ) : (
+                      <div className="contestant-photo-placeholder">
+                        <JudoGrapplersIcon color="#0284c7" size={72} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* [ PARTICIPANT NAME ] */}
                   <div className="contestant-name">
                     {currentFixture?.participant2?.name || "Participant 2"}
                   </div>
+
+                  {/* [ COLLEGE NAME ] */}
                   <div className="contestant-college">
                     {currentFixture?.participant2?.college || "College / Institution"}
-                  </div>
-                  <div className="contestant-icon">
-                    <JudoGrapplersIcon color="#0A192F" size={54} />
                   </div>
                 </div>
               </div>
@@ -152,24 +224,12 @@ export default function DisplayPage() {
 
             {/* Current Match Footer Banner */}
             <div className="current-match-footer">
-              {isOngoing ? (
-                <div className="match-action-label">
-                  Match in Progress
-                </div>
-              ) : isCompleted ? (
-                <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="match-winner-highlight">
-                    Winner: {isP1Winner ? currentFixture?.participant1?.name : currentFixture?.participant2?.name}
-                  </div>
-                  <div style={{ color: '#fbbf24', fontWeight: 800, fontSize: '14px', letterSpacing: '0.5px' }}>
-                    MATCH COMPLETED
-                  </div>
-                </div>
-              ) : (
-                <div className="match-action-label">
-                  Match Scheduled
-                </div>
-              )}
+              <div className="match-action-label">
+                {isOngoing ? "Match in Progress" : "Match Scheduled"}
+              </div>
+              <div style={{ fontSize: '13px', color: '#38bdf8', fontWeight: 700 }}>
+                MAT 1 • RING 1
+              </div>
             </div>
           </section>
         ) : (
@@ -183,54 +243,78 @@ export default function DisplayPage() {
           </section>
         )}
 
-        {/* 3-FIXTURE SYSTEM: NEXT TWO FIXTURES (DO NOT INHERIT GENDER / WEIGHT) */}
-        <section className="next-matches-section" aria-label="Upcoming Judo Matches">
-          <div className="next-matches-title">
-            UPCOMING FIXTURES
-          </div>
-
-          {nextFixtures && nextFixtures.length > 0 ? (
-            <>
-              {nextFixtures.map((fixture, idx) => (
-                <article key={fixture.id} className="next-match-card">
-                  <div className="next-match-header-row">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span className="next-queue-order-badge">
-                        {idx === 0 ? "NEXT" : "NEXT + 1"}
-                      </span>
-                    </div>
-                    <span className="next-match-status">{fixture.status}</span>
-                  </div>
-
-                  <div className="next-match-participants">
-                    <div className="next-p-box">
-                      <span className="next-p-name">{fixture.participant1?.name}</span>
-                      <span className="next-p-college">{fixture.participant1?.college}</span>
-                    </div>
-                    <div className="next-vs-badge">VS</div>
-                    <div className="next-p-box right">
-                      <span className="next-p-name">{fixture.participant2?.name}</span>
-                      <span className="next-p-college">{fixture.participant2?.college}</span>
-                    </div>
-                  </div>
-                </article>
-              ))}
-
-              {/* If only 1 upcoming match exists, display next+1 placeholder */}
-              {nextFixtures.length === 1 && (
-                <div className="next-match-card placeholder">
-                  <div style={{ color: '#64748b', fontSize: '13px', fontWeight: 600, textAlign: 'center' }}>
-                    Awaiting next fixture in queue...
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="next-match-card" style={{ textAlign: 'center', padding: '18px', color: '#334e68' }}>
-              {hasFixtures ? "Final fixture of the active queue" : "No upcoming fixtures queued"}
+        {/* 3-FIXTURE SYSTEM: UPCOMING FIXTURES (HIDDEN DURING WINNER CELEBRATION TO SHOW ONLY THE WINNER) */}
+        {!showWinnerCelebration && (
+          <section className="next-matches-section" aria-label="Upcoming Judo Matches">
+            <div className="next-matches-title">
+              UPCOMING FIXTURES
             </div>
-          )}
-        </section>
+
+            {nextFixtures && nextFixtures.length > 0 ? (
+              <>
+                {nextFixtures.map((fixture, idx) => (
+                  <article key={fixture.id} className="next-match-card">
+                    <div className="next-match-header-row">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="next-queue-order-badge">
+                          {idx === 0 ? "NEXT" : "NEXT + 1"}
+                        </span>
+                      </div>
+                      <span className="next-match-status">{fixture.status}</span>
+                    </div>
+
+                    <div className="next-match-participants">
+                      {/* Upcoming Participant 1 */}
+                      <div className="next-p-box">
+                        <div className="next-p-photo-frame">
+                          {fixture.participant1?.photo ? (
+                            <img src={fixture.participant1.photo} alt={fixture.participant1.name} className="next-p-photo-img" />
+                          ) : (
+                            <JudoGrapplersIcon color="#0284c7" size={24} />
+                          )}
+                        </div>
+                        <div className="next-p-text-col">
+                          <span className="next-p-name">{fixture.participant1?.name}</span>
+                          <span className="next-p-college">{fixture.participant1?.college}</span>
+                        </div>
+                      </div>
+
+                      <div className="next-vs-badge">VS</div>
+
+                      {/* Upcoming Participant 2 */}
+                      <div className="next-p-box right">
+                        <div className="next-p-text-col right">
+                          <span className="next-p-name">{fixture.participant2?.name}</span>
+                          <span className="next-p-college">{fixture.participant2?.college}</span>
+                        </div>
+                        <div className="next-p-photo-frame">
+                          {fixture.participant2?.photo ? (
+                            <img src={fixture.participant2.photo} alt={fixture.participant2.name} className="next-p-photo-img" />
+                          ) : (
+                            <JudoGrapplersIcon color="#0284c7" size={24} />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+
+                {/* If only 1 upcoming match exists, display next+1 placeholder */}
+                {nextFixtures.length === 1 && (
+                  <div className="next-match-card placeholder">
+                    <div style={{ color: '#64748b', fontSize: '13px', fontWeight: 600, textAlign: 'center' }}>
+                      Awaiting next fixture in queue...
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="next-match-card" style={{ textAlign: 'center', padding: '18px', color: '#334e68' }}>
+                {hasFixtures ? "Final fixture of the active queue" : "No upcoming fixtures queued"}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Footer with Black Belt Crest */}
         <footer className="display-footer">

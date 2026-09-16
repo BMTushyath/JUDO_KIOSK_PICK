@@ -34,14 +34,19 @@ export default defineConfig({
             req.on('end', () => {
               try {
                 const data = JSON.parse(body);
+                const incomingVersion = Number(data.version) || 0;
+                const newVersion = Math.max(devMemoryState.version || 0, incomingVersion) + 1;
+                const newLastUpdated = Math.max(Date.now(), Number(data.lastUpdated) || 0);
+
                 const mergedTournamentState = data.tournamentState !== undefined
-                  ? { ...(devMemoryState.tournamentState || {}), ...data.tournamentState }
+                  ? (data.isFullState ? data.tournamentState : { ...(devMemoryState.tournamentState || {}), ...data.tournamentState })
                   : devMemoryState.tournamentState;
+
                 devMemoryState = {
                   tournamentState: mergedTournamentState,
                   operatorPeerId: data.operatorPeerId !== undefined ? data.operatorPeerId : devMemoryState.operatorPeerId,
-                  version: (devMemoryState.version || 0) + 1,
-                  lastUpdated: Date.now()
+                  version: newVersion,
+                  lastUpdated: newLastUpdated
                 };
                 res.statusCode = 200;
                 res.end(JSON.stringify({ success: true, version: devMemoryState.version, lastUpdated: devMemoryState.lastUpdated }));

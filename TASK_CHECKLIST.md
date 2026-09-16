@@ -41,6 +41,14 @@ Handoff and state tracking document for AI coding agents.
 - [x] Operator route (`/`) and spectator display (`/display`) state synchronization
 - [x] Resilient watchdog polling (1.5s interval) and offline localStorage fallback
 - [x] Optional Vercel KV / Upstash Redis support in serverless API endpoint
+- [x] Participant photo support in matchup creation & participant management (Client-side compression to ~20KB data URL)
+- [x] Required participant photo enforcement (No matchup/participant proceeds to ongoing fixture without photo)
+- [x] Prominent photo position on /display: Each participant photo rendered strictly ABOVE name with large, clear visibility
+- [x] Full-screen winner celebration view on /display: Shows ONLY winner with large photo, 👑 name, and college name
+- [x] Continuous looping party-popper / confetti animation active indefinitely until operator presses "SHOW NEXT FIXTURE"
+- [x] Show Next Fixture terminates celebration, cleans up confetti, and displays new current fixture with both photos above names
+- [x] Enlarged horizontal display sizing: Current and next fixtures end-to-end width and significantly larger typography
+- [x] Fix intermittent "Make Active" synchronization issue: Monotonic versioning & timestamp tracking prevents stale state overwrites
 
 
 
