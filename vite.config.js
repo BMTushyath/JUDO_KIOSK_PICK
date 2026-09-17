@@ -40,16 +40,22 @@ export default defineConfig({
                   const newPhoto = data.photo || null;
                   const currentStoredState = devMemoryState.tournamentState || {};
 
-                  const participants = Array.isArray(currentStoredState.participants) ? currentStoredState.participants : [];
-                  const updatedParticipants = participants.map(p => {
+                  const storedParticipants = Array.isArray(currentStoredState.participants) ? currentStoredState.participants : [];
+                  const fallbackParticipants = Array.isArray(data.participants) ? data.participants : [];
+                  const baseParticipants = storedParticipants.length >= fallbackParticipants.length ? storedParticipants : fallbackParticipants;
+
+                  const updatedParticipants = baseParticipants.map(p => {
                     if (String(p.participant_id) === pId || String(p.id) === pId) {
                       return { ...p, photo: newPhoto };
                     }
                     return p;
                   });
 
-                  const fixtures = Array.isArray(currentStoredState.fixtures) ? currentStoredState.fixtures : [];
-                  const updatedFixtures = fixtures.map(f => {
+                  const storedFixtures = Array.isArray(currentStoredState.fixtures) ? currentStoredState.fixtures : [];
+                  const fallbackFixtures = Array.isArray(data.fixtures) ? data.fixtures : [];
+                  const baseFixtures = storedFixtures.length >= fallbackFixtures.length ? storedFixtures : fallbackFixtures;
+
+                  const updatedFixtures = baseFixtures.map(f => {
                     let updatedF = { ...f };
                     let changed = false;
                     if (f.participant1 && (String(f.participant1.id) === pId || String(f.participant1.participant_id) === pId)) {

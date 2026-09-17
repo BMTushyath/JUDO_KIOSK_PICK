@@ -122,7 +122,17 @@ export default function PicPickerPage() {
 
   // Group all fixtures created by Main Operator (ALL upcoming, ongoing, completed)
   // Allows PIC PICKERS to photograph players several fixtures ahead!
-  const sortedFixtures = [...fixtures];
+  const sortedFixtures = (Array.isArray(fixtures) && fixtures.length > 0)
+    ? [...fixtures]
+    : (() => {
+        try {
+          const cached = localStorage.getItem("VTU_JUDO_TOURNAMENT_STATE_V2_FIXTURES");
+          const parsed = cached ? JSON.parse(cached) : [];
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      })();
 
   // Helper to find latest participant record from registered dataset
   const getParticipantDetails = (pSummary) => {

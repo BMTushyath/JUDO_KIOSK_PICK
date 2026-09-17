@@ -35,6 +35,9 @@ async function readAuthoritative(redis) {
         const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
         if (parsed && (Number(parsed.version) || 0) >= (memoryState.version || 0)) {
           memoryState = parsed;
+          return parsed;
+        } else if (memoryState && (memoryState.version || 0) > 0) {
+          return memoryState;
         }
         return parsed;
       }
@@ -99,16 +102,23 @@ export default async function handler(req, res) {
         const pId = String(body.participantId);
         const newPhoto = body.photo || null;
 
-        const participants = Array.isArray(currentStoredState.participants) ? currentStoredState.participants : [];
-        const updatedParticipants = participants.map(p => {
+        const storedParticipants = Array.isArray(currentStoredState.participants) ? currentStoredState.participants : [];
+        const fallbackParticipants = Array.isArray(body.participants) ? body.participants : [];
+        const baseParticipants = storedParticipants.length >= fallbackParticipants.length ? storedParticipants : fallbackParticipants;
+
+        const updatedParticipants = baseParticipants.map(p => {
           if (String(p.participant_id) === pId || String(p.id) === pId) {
             return { ...p, photo: newPhoto };
           }
           return p;
         });
 
-        const fixtures = Array.isArray(currentStoredState.fixtures) ? currentStoredState.fixtures : [];
-        const updatedFixtures = fixtures.map(f => {
+        const storedFixtures = Array.isArray(currentStoredState.fixtures) ? currentStoredState.fixtures : [];
+        const fallbackFixtures = Array.isArray(body.fixtures) ? body.fixtures : [];
+        // Preserve fixtures: if server has empty fixtures but client sent fixtures, NEVER drop fixtures!
+        const baseFixtures = storedFixtures.length >= fallbackFixtures.length ? storedFixtures : fallbackFixtures;
+
+        const updatedFixtures = baseFixtures.map(f => {
           let updatedF = { ...f };
           let changed = false;
           if (f.participant1 && (String(f.participant1.id) === pId || String(f.participant1.participant_id) === pId)) {

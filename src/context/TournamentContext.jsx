@@ -80,29 +80,64 @@ export function TournamentProvider({ children }) {
   const applyRemoteState = useCallback((payload) => {
     if (!payload || typeof payload !== 'object') return;
     try {
-      if (payload.datasetMeta !== undefined) {
+      if (payload.datasetMeta !== undefined && payload.datasetMeta !== null) {
         setDatasetMeta(payload.datasetMeta);
         writeLS(`${STORAGE_KEY}_DATASET_META`, payload.datasetMeta);
+        stateRef.current.datasetMeta = payload.datasetMeta;
       }
       if (payload.participants !== undefined) {
-        setParticipants(payload.participants);
-        writeLS(`${STORAGE_KEY}_PARTICIPANTS`, payload.participants);
+        const currentValidParticipants = (Array.isArray(stateRef.current.participants) && stateRef.current.participants.length > 0)
+          ? stateRef.current.participants
+          : readLS(`${STORAGE_KEY}_PARTICIPANTS`, []);
+
+        const isIncomingValid = Array.isArray(payload.participants) && payload.participants.length > 0;
+
+        if (isIncomingValid) {
+          setParticipants(payload.participants);
+          writeLS(`${STORAGE_KEY}_PARTICIPANTS`, payload.participants);
+          stateRef.current.participants = payload.participants;
+        } else if (currentValidParticipants.length > 0) {
+          console.warn("Safeguard: Blocked empty/invalid remote participants overwrite");
+        } else if (Array.isArray(payload.participants)) {
+          setParticipants(payload.participants);
+          writeLS(`${STORAGE_KEY}_PARTICIPANTS`, payload.participants);
+          stateRef.current.participants = payload.participants;
+        }
       }
-      if (payload.operatorCategory !== undefined) {
+      if (payload.operatorCategory !== undefined && payload.operatorCategory !== null) {
         setOperatorCategoryState(payload.operatorCategory);
         writeLS(`${STORAGE_KEY}_OPERATOR_CATEGORY`, payload.operatorCategory);
+        stateRef.current.operatorCategory = payload.operatorCategory;
       }
       if (payload.fixtures !== undefined) {
-        setFixtures(payload.fixtures);
-        writeLS(`${STORAGE_KEY}_FIXTURES`, payload.fixtures);
+        // CRITICAL SAFEGUARD: Never allow empty or invalid remote fixtures to overwrite non-empty local fixtures!
+        const currentValidFixtures = (Array.isArray(stateRef.current.fixtures) && stateRef.current.fixtures.length > 0)
+          ? stateRef.current.fixtures
+          : readLS(`${STORAGE_KEY}_FIXTURES`, []);
+
+        const isIncomingValid = Array.isArray(payload.fixtures) && payload.fixtures.length > 0;
+
+        if (isIncomingValid) {
+          setFixtures(payload.fixtures);
+          writeLS(`${STORAGE_KEY}_FIXTURES`, payload.fixtures);
+          stateRef.current.fixtures = payload.fixtures;
+        } else if (currentValidFixtures.length > 0) {
+          console.warn("Safeguard: Blocked empty/invalid remote fixtures overwrite");
+        } else if (Array.isArray(payload.fixtures)) {
+          setFixtures(payload.fixtures);
+          writeLS(`${STORAGE_KEY}_FIXTURES`, payload.fixtures);
+          stateRef.current.fixtures = payload.fixtures;
+        }
       }
-      if (payload.currentFixtureId !== undefined) {
+      if (payload.currentFixtureId !== undefined && payload.currentFixtureId !== null) {
         setCurrentFixtureId(payload.currentFixtureId);
         writeLS(`${STORAGE_KEY}_CURRENT_ID`, payload.currentFixtureId);
+        stateRef.current.currentFixtureId = payload.currentFixtureId;
       }
-      if (payload.auditLogs !== undefined) {
+      if (payload.auditLogs !== undefined && Array.isArray(payload.auditLogs)) {
         setAuditLogs(payload.auditLogs);
         writeLS(`${STORAGE_KEY}_LOGS`, payload.auditLogs);
+        stateRef.current.auditLogs = payload.auditLogs;
       }
       setLastSync(new Date().toLocaleTimeString());
     } catch (e) {
@@ -427,14 +462,28 @@ export function TournamentProvider({ children }) {
 
               let changed = false;
               if (data.tournamentState.participants) {
-                setParticipants(data.tournamentState.participants);
-                writeLS(`${STORAGE_KEY}_PARTICIPANTS`, data.tournamentState.participants);
-                changed = true;
+                const isIncomingValid = Array.isArray(data.tournamentState.participants) && data.tournamentState.participants.length > 0;
+                if (isIncomingValid) {
+                  setParticipants(data.tournamentState.participants);
+                  writeLS(`${STORAGE_KEY}_PARTICIPANTS`, data.tournamentState.participants);
+                  stateRef.current.participants = data.tournamentState.participants;
+                  changed = true;
+                }
               }
               if (data.tournamentState.fixtures) {
-                setFixtures(data.tournamentState.fixtures);
-                writeLS(`${STORAGE_KEY}_FIXTURES`, data.tournamentState.fixtures);
-                changed = true;
+                const currentValidFixtures = (Array.isArray(stateRef.current.fixtures) && stateRef.current.fixtures.length > 0)
+                  ? stateRef.current.fixtures
+                  : readLS(`${STORAGE_KEY}_FIXTURES`, []);
+                const isIncomingValid = Array.isArray(data.tournamentState.fixtures) && data.tournamentState.fixtures.length > 0;
+
+                if (isIncomingValid) {
+                  setFixtures(data.tournamentState.fixtures);
+                  writeLS(`${STORAGE_KEY}_FIXTURES`, data.tournamentState.fixtures);
+                  stateRef.current.fixtures = data.tournamentState.fixtures;
+                  changed = true;
+                } else if (currentValidFixtures.length > 0) {
+                  console.warn("Safeguard: Blocked empty remote fixtures on Operator");
+                }
               }
               if (changed) {
                 setLastSync(new Date().toLocaleTimeString());
@@ -493,16 +542,28 @@ export function TournamentProvider({ children }) {
     return updated;
   };
 
-  // Derive Current Fixture
-  const currentFixture = fixtures.find(f => f.id === currentFixtureId) || fixtures[0] || null;
+  // Derive Current and Active Fixtures resilient against transient empty flashes
+  const activeFixtures = (Array.isArray(fixtures) && fixtures.length > 0)
+    ? fixtures
+    : (Array.isArray(stateRef.current.fixtures) && stateRef.current.fixtures.length > 0
+        ? stateRef.current.fixtures
+        : readLS(`${STORAGE_KEY}_FIXTURES`, []));
+
+  const activeParticipants = (Array.isArray(participants) && participants.length > 0)
+    ? participants
+    : (Array.isArray(stateRef.current.participants) && stateRef.current.participants.length > 0
+        ? stateRef.current.participants
+        : readLS(`${STORAGE_KEY}_PARTICIPANTS`, []));
+
+  const currentFixture = activeFixtures.find(f => f.id === currentFixtureId) || activeFixtures[0] || null;
 
   // Upcoming fixtures (excluding current)
-  const remainingFixtures = fixtures.filter(
+  const remainingFixtures = activeFixtures.filter(
     f => f.id !== currentFixture?.id && (f.status === "PENDING" || f.status === "ONGOING")
   );
   // Next 2 fixtures for public display
   const nextFixtures = remainingFixtures.slice(0, 2);
-  const completedFixtures = fixtures.filter(f => f.status === "COMPLETED");
+  const completedFixtures = activeFixtures.filter(f => f.status === "COMPLETED");
 
   // Operator Category toggle
   const setOperatorCategory = (newCat) => {
@@ -559,7 +620,12 @@ export function TournamentProvider({ children }) {
     const pId = String(participantId);
 
     // 1. Optimistic local update for instantaneous UI feedback
-    const currentParticipants = stateRef.current.participants || [];
+    const currentParticipants = (Array.isArray(stateRef.current.participants) && stateRef.current.participants.length > 0)
+      ? stateRef.current.participants
+      : (Array.isArray(participants) && participants.length > 0
+          ? participants
+          : readLS(`${STORAGE_KEY}_PARTICIPANTS`, []));
+
     const updatedParticipants = currentParticipants.map(p => {
       if (String(p.participant_id) === pId || String(p.id) === pId) {
         return { ...p, photo: photoDataUrl };
@@ -567,7 +633,12 @@ export function TournamentProvider({ children }) {
       return p;
     });
 
-    const currentFixtures = stateRef.current.fixtures || [];
+    const currentFixtures = (Array.isArray(stateRef.current.fixtures) && stateRef.current.fixtures.length > 0)
+      ? stateRef.current.fixtures
+      : (Array.isArray(fixtures) && fixtures.length > 0
+          ? fixtures
+          : readLS(`${STORAGE_KEY}_FIXTURES`, []));
+
     const updatedFixtures = currentFixtures.map(f => {
       let updatedF = { ...f };
       let changed = false;
@@ -601,7 +672,9 @@ export function TournamentProvider({ children }) {
         body: JSON.stringify({
           action: 'UPDATE_PHOTO',
           participantId: pId,
-          photo: photoDataUrl
+          photo: photoDataUrl,
+          fixtures: updatedFixtures,
+          participants: updatedParticipants
         })
       });
 
@@ -636,7 +709,8 @@ export function TournamentProvider({ children }) {
               type: "STATE_UPDATE",
               payload: {
                 participants: data.tournamentState.participants,
-                fixtures: data.tournamentState.fixtures
+                fixtures: data.tournamentState.fixtures,
+                currentFixtureId: data.tournamentState.currentFixtureId || stateRef.current.currentFixtureId
               },
               version: data.version,
               lastUpdated: data.lastUpdated
@@ -961,9 +1035,9 @@ export function TournamentProvider({ children }) {
   return (
     <TournamentContext.Provider value={{
       datasetMeta,
-      participants,
+      participants: activeParticipants,
       operatorCategory,
-      fixtures,
+      fixtures: activeFixtures,
       currentFixture,
       nextFixtures,
       remainingFixtures,
