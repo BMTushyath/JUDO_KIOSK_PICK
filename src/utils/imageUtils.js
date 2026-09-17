@@ -1,9 +1,9 @@
 /**
  * Client-side image compression utility
  * Converts any user-selected image file into an optimized base64 data URL.
- * Target size: ~15KB - 30KB (ideal for WebRTC & localStorage sync without external DB).
+ * Preserves high face quality for large public display while keeping transfer fast.
  */
-export function compressImageFile(file, maxWidth = 480, maxHeight = 480, quality = 0.82) {
+export function compressImageFile(file, maxWidth = 720, maxHeight = 720, quality = 0.85) {
   return new Promise((resolve, reject) => {
     if (!file) {
       return reject(new Error('No file provided'));

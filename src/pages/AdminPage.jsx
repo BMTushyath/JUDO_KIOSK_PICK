@@ -34,6 +34,8 @@ import * as XLSX from 'xlsx';
 import DatasetImportModal from '../components/DatasetImportModal';
 import MatchupCreateModal from '../components/MatchupCreateModal';
 import ParticipantFormModal from '../components/ParticipantFormModal';
+import PhotoUploadArea from '../components/PhotoUploadArea';
+import DefaultAvatar from '../components/DefaultAvatar';
 
 const MEN_WEIGHT_CATEGORIES = ["-60 KG", "-66 KG", "-73 KG", "-81 KG", "-90 KG", "-100 KG", "+100 KG", "OPEN"];
 const WOMEN_WEIGHT_CATEGORIES = ["-48 KG", "-52 KG", "-57 KG", "-63 KG", "-70 KG", "-78 KG", "+78 KG", "OPEN"];
@@ -66,7 +68,8 @@ export default function AdminPage() {
     undoWinner,
     showNextFixture,
     selectFixture,
-    resetDemoState
+    resetDemoState,
+    updateParticipantPhoto
   } = useTournament();
 
   const [activeTab, setActiveTab] = useState('match-control');
@@ -140,19 +143,10 @@ export default function AdminPage() {
   );
 
   const handleMakeActive = (fixture) => {
-    if (!fixture.participant1?.photo || !fixture.participant2?.photo) {
-      alert("Participant photo is REQUIRED for both athletes to proceed to an ongoing fixture. Please ensure photos are attached.");
-      return;
-    }
     selectFixture(fixture.id);
   };
 
   const handleShowNext = () => {
-    const nextFixture = remainingFixtures[0];
-    if (nextFixture && (!nextFixture.participant1?.photo || !nextFixture.participant2?.photo)) {
-      alert("Participant photo is REQUIRED for both athletes to proceed to an ongoing fixture. Please ensure photos are attached before advancing.");
-      return;
-    }
     showNextFixture();
   };
 
@@ -248,6 +242,19 @@ export default function AdminPage() {
           <Clock size={16} />
           Audit Logs ({auditLogs.length})
         </button>
+
+        {/* Dedicated Link to open /pic in new tab */}
+        <a 
+          href="/pic" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="admin-view-display-link"
+          style={{ background: '#0f172a', borderColor: '#38bdf8', color: '#38bdf8' }}
+          title="Open PIC PICKER mode (Shared code: 1234)"
+        >
+          <Camera size={14} />
+          PIC PICKER (/pic)
+        </a>
 
         {/* Dedicated Link to open /display in new tab */}
         <a 
@@ -388,13 +395,12 @@ export default function AdminPage() {
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', margin: '8px 0' }}>
-                          <div style={{ width: '56px', height: '66px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#e2e8f0', border: '2px solid #0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {currentFixture?.participant1?.photo ? (
-                              <img src={currentFixture.participant1.photo} alt={currentFixture.participant1.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              <Camera size={24} color="#94a3b8" />
-                            )}
-                          </div>
+                          <PhotoUploadArea
+                            photo={currentFixture?.participant1?.photo}
+                            onPhotoChange={(newPhoto) => updateParticipantPhoto(currentFixture.participant1?.id, newPhoto)}
+                            size={64}
+                            shape="circle"
+                          />
                           <div>
                             <div className="p-name-main">{currentFixture?.participant1?.name}</div>
                             <div className="p-college-sub">{currentFixture?.participant1?.college}</div>
@@ -440,13 +446,12 @@ export default function AdminPage() {
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', margin: '8px 0' }}>
-                          <div style={{ width: '56px', height: '66px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#e2e8f0', border: '2px solid #0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {currentFixture?.participant2?.photo ? (
-                              <img src={currentFixture.participant2.photo} alt={currentFixture.participant2.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              <Camera size={24} color="#94a3b8" />
-                            )}
-                          </div>
+                          <PhotoUploadArea
+                            photo={currentFixture?.participant2?.photo}
+                            onPhotoChange={(newPhoto) => updateParticipantPhoto(currentFixture.participant2?.id, newPhoto)}
+                            size={64}
+                            shape="circle"
+                          />
                           <div>
                             <div className="p-name-main">{currentFixture?.participant2?.name}</div>
                             <div className="p-college-sub">{currentFixture?.participant2?.college}</div>
@@ -907,7 +912,7 @@ export default function AdminPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13.5px' }}>
                 <thead>
                   <tr style={{ background: '#f0fdf4', color: 'var(--color-navy-dark)', textAlign: 'left', borderBottom: '2px solid #b2ebf2' }}>
-                    <th style={{ padding: '10px 12px' }}>ID</th>
+                    <th style={{ padding: '10px 12px', width: '56px' }}>Photo</th>
                     <th style={{ padding: '10px 12px' }}>Athlete Name</th>
                     <th style={{ padding: '10px 12px' }}>College / Institution</th>
                     <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>
@@ -922,9 +927,14 @@ export default function AdminPage() {
                     </tr>
                   ) : (
                     filteredAthletes.slice(0, 100).map((p, i) => (
-                      <tr key={p.participant_id || i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? 'transparent' : '#f8fafc' }}>
-                        <td style={{ padding: '10px 12px', fontFamily: 'var(--font-mono)', color: '#0284c7', fontWeight: 700 }}>
-                          {p.participant_id}
+                      <tr key={p.participant_id || p.id || i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? 'transparent' : '#f8fafc' }}>
+                        <td style={{ padding: '6px 12px' }}>
+                          <PhotoUploadArea
+                            photo={p.photo}
+                            onPhotoChange={(newPhoto) => updateParticipantPhoto(p.participant_id || p.id, newPhoto)}
+                            size={40}
+                            shape="circle"
+                          />
                         </td>
                         <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--color-navy-dark)' }}>
                           {p.name}

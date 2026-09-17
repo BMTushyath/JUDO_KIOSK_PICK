@@ -48,7 +48,21 @@ Handoff and state tracking document for AI coding agents.
 - [x] Continuous looping party-popper / confetti animation active indefinitely until operator presses "SHOW NEXT FIXTURE"
 - [x] Show Next Fixture terminates celebration, cleans up confetti, and displays new current fixture with both photos above names
 - [x] Enlarged horizontal display sizing: Current and next fixtures end-to-end width and significantly larger typography
-- [x] Fix intermittent "Make Active" synchronization issue: Monotonic versioning & timestamp tracking prevents stale state overwrites
-
+- [x] Configure separate repository remote JUDO_KIOSK_PICK.git while preserving original JUDO_KIOSK_STACK.git
+- [x] Route `/pic` for PIC PICKER mobile mode
+- [x] Single shared access code (`PICK_ACCESS_CODE=1234`) for both PIC PICKER phones without unique code requests
+- [x] Restricted PIC PICKER permissions (only photo capture, retake, replace, and status viewing)
+- [x] Unlimited upcoming fixture queue for PIC PICKERS (allows photographing matches several fixtures ahead while current match is ongoing)
+- [x] Retake photo functionality with camera trigger, instant compression, and shared state update
+- [x] Clear photo status badges (NO PHOTO, PHOTO UPLOADING, PHOTO READY, PHOTO BEING RETAKEN)
+- [x] Clean generic Default Avatar component (SVG circular silhouette, neutral, original)
+- [x] 3-tier Operator photo input (Windows Explorer drag-and-drop, clipboard paste Ctrl+V, file picker fallback)
+- [x] High-quality photo compression (720x720 @ 0.85 quality, preserving face sharpness on large display)
+- [x] Rapid participant entry (Name & College only, no participant ID requirement, no 001-300 restriction)
+- [x] Fast Drag-and-Drop matchup creation (right-hand participant panel, drag into Player 1 & Player 2, click-to-assign)
+- [x] Fix intermittent "Make Active" synchronization issue with synchronous stateRef updating and atomic version monotonicity
+- [x] Non-blocking tournament progression (photos do not block Main Operator from making fixtures active or advancing)
+- [x] Preserve portrait display layout, VTU & Sambhram logos, exact title, and continuous winner celebration
+- [x] Verified clean production build with Vite (`npm run build` exit code 0)
 
 

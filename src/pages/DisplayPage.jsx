@@ -3,6 +3,7 @@ import { useTournament } from '../context/TournamentContext';
 import { VtuLogo, SambhramLogoGroup, JudoGrapplersIcon, BlackBeltBanner } from '../assets/logos';
 import { Clock } from 'lucide-react';
 import ConfettiCelebration from '../components/ConfettiCelebration';
+import DefaultAvatar from '../components/DefaultAvatar';
 import './DisplayPage.css';
 
 export default function DisplayPage() {
@@ -109,9 +110,7 @@ export default function DisplayPage() {
                   className="winner-photo-large-img"
                 />
               ) : (
-                <div className="contestant-photo-placeholder">
-                  <JudoGrapplersIcon color="#38bdf8" size={110} />
-                </div>
+                <DefaultAvatar size={110} />
               )}
             </div>
 
@@ -172,9 +171,7 @@ export default function DisplayPage() {
                         className="contestant-photo-img"
                       />
                     ) : (
-                      <div className="contestant-photo-placeholder">
-                        <JudoGrapplersIcon color="#0284c7" size={72} />
-                      </div>
+                      <DefaultAvatar size={72} />
                     )}
                   </div>
 
@@ -203,9 +200,7 @@ export default function DisplayPage() {
                         className="contestant-photo-img"
                       />
                     ) : (
-                      <div className="contestant-photo-placeholder">
-                        <JudoGrapplersIcon color="#0284c7" size={72} />
-                      </div>
+                      <DefaultAvatar size={72} />
                     )}
                   </div>
 
@@ -270,7 +265,7 @@ export default function DisplayPage() {
                           {fixture.participant1?.photo ? (
                             <img src={fixture.participant1.photo} alt={fixture.participant1.name} className="next-p-photo-img" />
                           ) : (
-                            <JudoGrapplersIcon color="#0284c7" size={24} />
+                            <DefaultAvatar size={34} />
                           )}
                         </div>
                         <div className="next-p-text-col">
@@ -291,7 +286,7 @@ export default function DisplayPage() {
                           {fixture.participant2?.photo ? (
                             <img src={fixture.participant2.photo} alt={fixture.participant2.name} className="next-p-photo-img" />
                           ) : (
-                            <JudoGrapplersIcon color="#0284c7" size={24} />
+                            <DefaultAvatar size={34} />
                           )}
                         </div>
                       </div>

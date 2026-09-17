@@ -32,6 +32,7 @@ const writeLS = (key, val) => {
 
 export function TournamentProvider({ children }) {
   const isDisplay = typeof window !== 'undefined' && window.location.pathname.startsWith('/display');
+  const isPic = typeof window !== 'undefined' && window.location.pathname.startsWith('/pic');
 
   // State definitions initialized from localStorage cache for instant UI rendering
   const [datasetMeta, setDatasetMeta] = useState(() => readLS(`${STORAGE_KEY}_DATASET_META`, null));
@@ -117,6 +118,12 @@ export function TournamentProvider({ children }) {
       const currentVersion = localVersionRef.current;
       const currentTimestamp = Date.now();
       lastUpdatedRef.current = currentTimestamp;
+
+      // Immediately synchronize stateRef to eliminate stale snapshot races
+      stateRef.current = {
+        ...stateRef.current,
+        ...updates
+      };
 
       // 1. Update localStorage cache
       if (updates.datasetMeta !== undefined) writeLS(`${STORAGE_KEY}_DATASET_META`, updates.datasetMeta);
@@ -384,8 +391,8 @@ export function TournamentProvider({ children }) {
           setDbStatus("ONLINE");
           setRealtimeStatus("CONNECTED");
 
-          // CRITICAL: ONLY apply if remote state is strictly NEWER than our current local version/timestamp
-          if (isDisplay && data.tournamentState) {
+          // CRITICAL: Multi-device sync for Display, Pic Pickers, and Operator
+          if ((isDisplay || isPic) && data.tournamentState) {
             const incomingVersion = Number(data.version) || 0;
             const incomingUpdated = Number(data.lastUpdated) || 0;
             const isNewer = (incomingVersion > localVersionRef.current) || (incomingUpdated > (lastUpdatedRef.current || 0));
@@ -394,6 +401,25 @@ export function TournamentProvider({ children }) {
               localVersionRef.current = Math.max(localVersionRef.current, incomingVersion);
               lastUpdatedRef.current = Math.max(lastUpdatedRef.current, incomingUpdated);
               applyRemoteState(data.tournamentState);
+            }
+          } else if (!isDisplay && !isPic && data.tournamentState) {
+            // Operator: sync updated photos from PIC PICKERS
+            const incomingVersion = Number(data.version) || 0;
+            const incomingUpdated = Number(data.lastUpdated) || 0;
+            const isNewer = (incomingVersion > localVersionRef.current) || (incomingUpdated > (lastUpdatedRef.current || 0));
+
+            if (isNewer) {
+              localVersionRef.current = Math.max(localVersionRef.current, incomingVersion);
+              lastUpdatedRef.current = Math.max(lastUpdatedRef.current, incomingUpdated);
+              if (data.tournamentState.participants) {
+                setParticipants(data.tournamentState.participants);
+                writeLS(`${STORAGE_KEY}_PARTICIPANTS`, data.tournamentState.participants);
+              }
+              if (data.tournamentState.fixtures) {
+                setFixtures(data.tournamentState.fixtures);
+                writeLS(`${STORAGE_KEY}_FIXTURES`, data.tournamentState.fixtures);
+              }
+              setLastSync(new Date().toLocaleTimeString());
             }
           }
 
@@ -416,7 +442,7 @@ export function TournamentProvider({ children }) {
         try { peerInstance.destroy(); } catch {}
       }
     };
-  }, [isDisplay, applyRemoteState]);
+  }, [isDisplay, isPic, applyRemoteState]);
 
   // Helper to append an audit log
   const logAction = (action, description) => {
@@ -482,16 +508,95 @@ export function TournamentProvider({ children }) {
     });
   };
 
-  // Add single participant
+  // Helper to check if a participant has an actual stored photo
+  const isPhotoReady = useCallback((participant) => {
+    return Boolean(
+      participant &&
+      participant.photo &&
+      typeof participant.photo === 'string' &&
+      participant.photo.length > 50 &&
+      !participant.photo.includes('default-avatar')
+    );
+  }, []);
+
+  // Update participant photo across participants and all fixtures atomically
+  const updateParticipantPhoto = useCallback((participantId, photoDataUrl) => {
+    if (!participantId) return;
+    const pId = String(participantId);
+
+    const currentParticipants = stateRef.current.participants || [];
+    const updatedParticipants = currentParticipants.map(p => {
+      if (String(p.participant_id) === pId || String(p.id) === pId) {
+        return { ...p, photo: photoDataUrl };
+      }
+      return p;
+    });
+
+    const currentFixtures = stateRef.current.fixtures || [];
+    const updatedFixtures = currentFixtures.map(f => {
+      let updatedF = { ...f };
+      let changed = false;
+      if (f.participant1 && (String(f.participant1.id) === pId || String(f.participant1.participant_id) === pId)) {
+        updatedF.participant1 = { ...f.participant1, photo: photoDataUrl };
+        changed = true;
+      }
+      if (f.participant2 && (String(f.participant2.id) === pId || String(f.participant2.participant_id) === pId)) {
+        updatedF.participant2 = { ...f.participant2, photo: photoDataUrl };
+        changed = true;
+      }
+      return changed ? updatedF : f;
+    });
+
+    setParticipants(updatedParticipants);
+    setFixtures(updatedFixtures);
+
+    const updatedLogs = logAction(
+      "PHOTO_UPDATED",
+      `Photo updated for participant ID ${pId}`
+    );
+
+    broadcast({
+      participants: updatedParticipants,
+      fixtures: updatedFixtures,
+      auditLogs: updatedLogs
+    });
+
+    // Also trigger atomic photo update on backend for zero-race concurrency
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'UPDATE_PHOTO',
+        participantId: pId,
+        photo: photoDataUrl
+      })
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (data?.version) localVersionRef.current = Math.max(localVersionRef.current, data.version);
+        if (data?.lastUpdated) lastUpdatedRef.current = Math.max(lastUpdatedRef.current, data.lastUpdated);
+      })
+      .catch(() => {});
+  }, [broadcast, logAction]);
+
+  // Add single participant (Rapid Entry: only Name and College required, no manual IDs)
   const addParticipant = (newParticipant) => {
-    const updated = [newParticipant, ...participants];
+    const generatedId = newParticipant.participant_id || ("p_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4));
+    const participantRecord = {
+      ...newParticipant,
+      participant_id: generatedId,
+      id: generatedId,
+      photo: newParticipant.photo || null
+    };
+
+    const updated = [participantRecord, ...participants];
     setParticipants(updated);
     let updatedMeta = datasetMeta;
     if (datasetMeta) {
       updatedMeta = { ...datasetMeta, recordCount: updated.length };
       setDatasetMeta(updatedMeta);
     }
-    const updatedLogs = logAction("PARTICIPANT_ADDED", `Added participant: ${newParticipant.name} (${newParticipant.college})`);
+    const updatedLogs = logAction("PARTICIPANT_ADDED", `Added participant: ${participantRecord.name} (${participantRecord.college})`);
     broadcast({
       participants: updated,
       ...(updatedMeta ? { datasetMeta: updatedMeta } : {}),
@@ -501,25 +606,50 @@ export function TournamentProvider({ children }) {
 
   // Update single participant
   const updateParticipant = (participant_id, fields) => {
-    const updated = participants.map(p => p.participant_id === participant_id ? { ...p, ...fields } : p);
+    const pId = String(participant_id);
+    const updated = participants.map(p => (String(p.participant_id) === pId || String(p.id) === pId) ? { ...p, ...fields } : p);
     setParticipants(updated);
-    const updatedLogs = logAction("PARTICIPANT_UPDATED", `Updated participant ${participant_id}: ${fields.name || ''}`);
+
+    // If photo or name changed, propagate to fixtures
+    let updatedFixtures = fixtures;
+    if (fields.photo !== undefined || fields.name !== undefined || fields.college !== undefined) {
+      updatedFixtures = fixtures.map(f => {
+        let uF = { ...f };
+        let changed = false;
+        if (f.participant1 && (String(f.participant1.id) === pId || String(f.participant1.participant_id) === pId)) {
+          uF.participant1 = { ...uF.participant1, ...fields };
+          changed = true;
+        }
+        if (f.participant2 && (String(f.participant2.id) === pId || String(f.participant2.participant_id) === pId)) {
+          uF.participant2 = { ...uF.participant2, ...fields };
+          changed = true;
+        }
+        return changed ? uF : f;
+      });
+      if (updatedFixtures !== fixtures) {
+        setFixtures(updatedFixtures);
+      }
+    }
+
+    const updatedLogs = logAction("PARTICIPANT_UPDATED", `Updated participant ${pId}: ${fields.name || ''}`);
     broadcast({
       participants: updated,
+      fixtures: updatedFixtures,
       auditLogs: updatedLogs
     });
   };
 
   // Delete single participant
   const deleteParticipant = (participant_id) => {
-    const updated = participants.filter(p => p.participant_id !== participant_id);
+    const pId = String(participant_id);
+    const updated = participants.filter(p => String(p.participant_id) !== pId && String(p.id) !== pId);
     setParticipants(updated);
     let updatedMeta = datasetMeta;
     if (datasetMeta) {
       updatedMeta = { ...datasetMeta, recordCount: updated.length };
       setDatasetMeta(updatedMeta);
     }
-    const updatedLogs = logAction("PARTICIPANT_DELETED", `Deleted participant ID ${participant_id}`);
+    const updatedLogs = logAction("PARTICIPANT_DELETED", `Deleted participant ID ${pId}`);
     broadcast({
       participants: updated,
       ...(updatedMeta ? { datasetMeta: updatedMeta } : {}),
@@ -528,23 +658,33 @@ export function TournamentProvider({ children }) {
   };
 
   // Matchup Creation: Add to ordered queue without interrupting live match
+  // Fixtures CAN be created before photos exist!
   const createMatchup = (player1, player2) => {
     const newId = "fix_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4);
     const isFirstFixture = fixtures.length === 0;
 
+    const p1Id = player1.participant_id || player1.id || ("P1_" + Date.now());
+    const p2Id = player2.participant_id || player2.id || ("P2_" + Date.now());
+
+    // Pull current photo from registered participant dataset if available
+    const p1Record = participants.find(p => String(p.participant_id) === String(p1Id) || String(p.id) === String(p1Id));
+    const p2Record = participants.find(p => String(p.participant_id) === String(p2Id) || String(p.id) === String(p2Id));
+
     const newFixture = {
       id: newId,
       participant1: {
-        id: player1.participant_id || player1.id || "P1",
+        id: p1Id,
+        participant_id: p1Id,
         name: player1.name,
         college: player1.college,
-        photo: player1.photo || null
+        photo: player1.photo || p1Record?.photo || null
       },
       participant2: {
-        id: player2.participant_id || player2.id || "P2",
+        id: p2Id,
+        participant_id: p2Id,
         name: player2.name,
         college: player2.college,
-        photo: player2.photo || null
+        photo: player2.photo || p2Record?.photo || null
       },
       status: isFirstFixture ? "ONGOING" : "PENDING",
       winnerId: null
@@ -772,7 +912,10 @@ export function TournamentProvider({ children }) {
       showNextFixture,
       selectFixture,
       resetDemoState,
-      setFixtures
+      setFixtures,
+      updateParticipantPhoto,
+      isPhotoReady,
+      isPic
     }}>
       {children}
     </TournamentContext.Provider>
