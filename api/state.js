@@ -21,6 +21,42 @@ function getRedis() {
   return null;
 }
 
+const REDIS_KEY = 'VTU_JUDO_TOURNAMENT_STATE';
+
+/**
+ * Read the current authoritative state from Redis (falling back to memoryState).
+ * Returns { tournamentState, operatorPeerId, version, lastUpdated }.
+ */
+async function readAuthoritative(redis) {
+  if (redis) {
+    try {
+      const stored = await redis.get(REDIS_KEY);
+      if (stored) {
+        const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
+        if (parsed && (Number(parsed.version) || 0) >= (memoryState.version || 0)) {
+          memoryState = parsed;
+        }
+        return parsed;
+      }
+    } catch (e) {
+      console.error('Redis read error:', e);
+    }
+  }
+  return memoryState;
+}
+
+/**
+ * Write state to Redis and update memoryState.
+ * Returns the persisted state object.
+ */
+async function writeAuthoritative(redis, state) {
+  memoryState = state;
+  if (redis) {
+    await redis.set(REDIS_KEY, JSON.stringify(state));
+  }
+  return state;
+}
+
 export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -40,17 +76,8 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     try {
-      if (redis) {
-        const stored = await redis.get('VTU_JUDO_TOURNAMENT_STATE');
-        if (stored) {
-          const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
-          if (parsed && (parsed.version || 0) >= (memoryState.version || 0)) {
-            memoryState = parsed;
-          }
-          return res.status(200).json(parsed);
-        }
-      }
-      return res.status(200).json(memoryState);
+      const current = await readAuthoritative(redis);
+      return res.status(200).json(current);
     } catch (err) {
       console.error('GET /api/state error:', err);
       return res.status(200).json(memoryState);
@@ -60,32 +87,14 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      
-      let currentStoredState = memoryState.tournamentState || {};
-      let storedVersion = memoryState.version || 0;
-      let storedLastUpdated = memoryState.lastUpdated || 0;
 
-      if (redis) {
-        try {
-          const stored = await redis.get('VTU_JUDO_TOURNAMENT_STATE');
-          if (stored) {
-            const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
-            if (parsed?.tournamentState) {
-              currentStoredState = parsed.tournamentState;
-            }
-            if (parsed?.version) {
-              storedVersion = Math.max(storedVersion, Number(parsed.version));
-            }
-            if (parsed?.lastUpdated) {
-              storedLastUpdated = Math.max(storedLastUpdated, Number(parsed.lastUpdated));
-            }
-          }
-        } catch (e) {
-          // ignore redis read error
-        }
-      }
+      // Always read the latest authoritative state first (read-your-writes consistency)
+      const current = await readAuthoritative(redis);
+      const currentStoredState = current.tournamentState || {};
+      const storedVersion = Number(current.version) || 0;
+      const currentOperatorPeerId = current.operatorPeerId;
 
-      // Atomic photo update action (used by PIC PICKER and Operator)
+      // ── Atomic photo update action (used by PIC PICKER and Operator) ──
       if (body.action === 'UPDATE_PHOTO' && body.participantId) {
         const pId = String(body.participantId);
         const newPhoto = body.photo || null;
@@ -124,15 +133,12 @@ export default async function handler(req, res) {
 
         const updated = {
           tournamentState: mergedTournamentState,
-          operatorPeerId: memoryState.operatorPeerId,
+          operatorPeerId: currentOperatorPeerId,
           version: newVersion,
           lastUpdated: newLastUpdated
         };
-        memoryState = updated;
 
-        if (redis) {
-          await redis.set('VTU_JUDO_TOURNAMENT_STATE', JSON.stringify(updated));
-        }
+        await writeAuthoritative(redis, updated);
 
         return res.status(200).json({
           success: true,
@@ -142,9 +148,23 @@ export default async function handler(req, res) {
         });
       }
 
+      // ── General state update (operator full-state push) ──
       const incomingVersion = Number(body.version) || 0;
+
+      // Guard against stale full-state overwrites: if an incoming full state is based on an older version
+      // than what Redis already stores, reject the overwrite and return current authoritative state.
+      if (body.isFullState && storedVersion > 0 && incomingVersion < storedVersion) {
+        return res.status(200).json({
+          success: false,
+          stale: true,
+          version: storedVersion,
+          lastUpdated: Number(current.lastUpdated) || Date.now(),
+          tournamentState: currentStoredState
+        });
+      }
+
       const newVersion = Math.max(storedVersion, incomingVersion) + 1;
-      const newLastUpdated = Math.max(Date.now(), storedLastUpdated, Number(body.lastUpdated) || 0);
+      const newLastUpdated = Date.now();
 
       const mergedTournamentState = body.tournamentState !== undefined
         ? (body.isFullState ? body.tournamentState : { ...currentStoredState, ...body.tournamentState })
@@ -152,17 +172,20 @@ export default async function handler(req, res) {
 
       const updated = {
         tournamentState: mergedTournamentState,
-        operatorPeerId: body.operatorPeerId !== undefined ? body.operatorPeerId : memoryState.operatorPeerId,
+        operatorPeerId: body.operatorPeerId !== undefined ? body.operatorPeerId : currentOperatorPeerId,
         version: newVersion,
         lastUpdated: newLastUpdated
       };
-      memoryState = updated;
 
-      if (redis) {
-        await redis.set('VTU_JUDO_TOURNAMENT_STATE', JSON.stringify(updated));
-      }
+      await writeAuthoritative(redis, updated);
 
-      return res.status(200).json({ success: true, version: updated.version, lastUpdated: updated.lastUpdated });
+      // Return the full authoritative state so the caller can reconcile immediately
+      return res.status(200).json({
+        success: true,
+        version: updated.version,
+        lastUpdated: updated.lastUpdated,
+        tournamentState: updated.tournamentState
+      });
     } catch (err) {
       console.error('POST /api/state error:', err);
       return res.status(500).json({ error: err.message });

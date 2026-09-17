@@ -88,7 +88,22 @@ export default defineConfig({
                 }
 
                 const incomingVersion = Number(data.version) || 0;
-                const newVersion = Math.max(devMemoryState.version || 0, incomingVersion) + 1;
+                const storedVersion = devMemoryState.version || 0;
+
+                // Guard against stale full-state overwrites
+                if (data.isFullState && storedVersion > 0 && incomingVersion < storedVersion) {
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({
+                    success: false,
+                    stale: true,
+                    version: storedVersion,
+                    lastUpdated: devMemoryState.lastUpdated,
+                    tournamentState: devMemoryState.tournamentState
+                  }));
+                  return;
+                }
+
+                const newVersion = Math.max(storedVersion, incomingVersion) + 1;
                 const newLastUpdated = Math.max(Date.now(), Number(data.lastUpdated) || 0);
 
                 const mergedTournamentState = data.tournamentState !== undefined
@@ -102,7 +117,12 @@ export default defineConfig({
                   lastUpdated: newLastUpdated
                 };
                 res.statusCode = 200;
-                res.end(JSON.stringify({ success: true, version: devMemoryState.version, lastUpdated: devMemoryState.lastUpdated }));
+                res.end(JSON.stringify({
+                  success: true,
+                  version: devMemoryState.version,
+                  lastUpdated: devMemoryState.lastUpdated,
+                  tournamentState: devMemoryState.tournamentState
+                }));
               } catch (e) {
                 res.statusCode = 400;
                 res.end(JSON.stringify({ error: e.message }));

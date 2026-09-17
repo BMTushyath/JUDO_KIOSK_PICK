@@ -102,7 +102,7 @@ export default function PicPickerPage() {
       const compressedDataUrl = await compressImageFile(file, 720, 720, 0.85);
 
       // Persist across shared multi-tier architecture
-      updateParticipantPhoto(targetId, compressedDataUrl);
+      await updateParticipantPhoto(targetId, compressedDataUrl);
 
       setUploadStatusMap(prev => {
         const copy = { ...prev };
